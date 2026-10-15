@@ -546,8 +546,8 @@ function render() {
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
 }
 const QA_ICON = {
-  out: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/>',
-  in: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 17v3h16v-3"/>',
+  out: '<path d="M4 10h16l-1.6 9.2a1 1 0 0 1-1 .8H6.6a1 1 0 0 1-1-.8z"/><path d="M8.5 10 11 4.5M15.5 10 13 4.5M9.5 14v3M14.5 14v3"/>',
+  in: '<path d="M2.5 6.5h11v9.5h-11z"/><path d="M13.5 9.5h4l3 3.2V16h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
   waste: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'
 };
 function qa(act, k, icon, label) {
