@@ -213,6 +213,29 @@ body:not(.hints) main .panel > p.small.muted, body:not(.hints) .hint{display:non
 .guide-mini{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px 18px;border:1px dashed var(--line);border-radius:var(--r);background:var(--surface);cursor:pointer;color:var(--ink);text-align:left;font:inherit}
 .guide-mini > span:first-child{flex:1;min-width:0}
 @media (max-width:560px){.who .chip{display:none}}
+
+/* v2 */
+.tgt-row{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.tgt .big{font-size:1.7rem;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.tgt-bar,.stack{position:relative;height:12px;border-radius:6px;background:var(--sunk);overflow:visible;display:flex}
+.tgt-bar i{border-radius:6px}
+.tgt-bar s,.stack s{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);text-decoration:none}
+.stack i{display:block;height:100%}.stack i:first-child{border-radius:6px 0 0 6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}
+.r{text-align:right}
+.shift-tbl th.c,.shift-tbl td.c{text-align:center;padding:6px 4px}
+.shift-tbl th.today{color:var(--ink);background:var(--hi);border-radius:8px 8px 0 0}
+.shift-tbl tr.me td{background:var(--accent-soft)}
+.sh,.sh-sel{display:inline-block;min-width:44px;padding:6px 4px;border-radius:10px;font-weight:700;text-align:center;font-size:.85rem;border:1px solid var(--line);background:var(--surface)}
+.sh-sel{width:52px;appearance:none;-webkit-appearance:none;cursor:pointer}
+.sh-P{background:#E2ECF6;border-color:#C5D8EC}.sh-S{background:#FFF9C4;border-color:#F2E88A}.sh-M{background:#E4E1F5;border-color:#CFC9EE}.sh-L{background:var(--sunk);color:var(--muted)}.sh-x{color:var(--muted)}
+.pay-tbl td,.pay-tbl th{white-space:nowrap}.pay-tbl tr.tot td{border-top:2px solid var(--line)}
+.pay-tbl input.cell-in{width:110px!important;text-align:right;padding:6px 8px!important}
+a.btn{text-decoration:none;color:inherit;display:inline-block}
+form[data-submit=shiftDefs] .fgrid{max-width:640px}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.linkbtn:hover b{color:var(--accent);text-decoration:underline}
+ol.steps{margin:0;padding-left:20px;display:grid;gap:4px}
+code{background:var(--sunk);padding:1px 6px;border-radius:6px;font-size:.9em}
 </style>
 </head>
 <body>
@@ -280,7 +303,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  hints: lsGet("rouna_hints") === "1", db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", shifts: [], salary: {}, payables: [], tg: null, notify: {}, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -457,7 +480,7 @@ async function startData(session) {
   subscribe(S.db.collection("stock"), "stock", mapColl("stock"));
   subscribe(S.db.collection("staff"), "staff", mapColl("staff"));
   subscribe(S.db.collection("recipes"), "recipes", mapColl("recipes"));
-  subscribe(S.db.collection("settings"), "settings", snap => { const o = {}; snap.docs.forEach(d => o[d.id] = d.data()); S.settings = o.app || {}; S.sop = o.sop || {}; });
+  subscribe(S.db.collection("settings"), "settings", snap => { const o = {}; snap.docs.forEach(d => o[d.id] = d.data()); S.settings = o.app || {}; S.sop = o.sop || {}; S.notify = o.notify || {}; });
   subscribe(S.db.collection("orders").orderBy("createdAt", "desc").limit(200), "orders", listColl("orders"));
   subscribe(S.db.collection("moves").orderBy("date", "desc").limit(45), "moves", listColl("moves"));
   subscribe(S.db.collection("closings").orderBy("date", "desc").limit(120), "closings", listColl("closings"));
@@ -467,6 +490,8 @@ async function startData(session) {
   if (["owner", "manager", "finance"].includes(r0.data)) {
     subscribe(S.db.collection("expenses").orderBy("month", "desc").limit(13), "expenses", listColl("expenses"));
     subscribe(S.db.collection("payroll"), "payroll", listColl("payroll"));
+    subscribe(S.db.collection("salary"), "salary", mapColl("salary"));
+    subscribe(S.db.collection("payables"), "payables", listColl("payables"));
     subscribe(S.db.collection("briefs").orderBy("date", "desc").limit(3), "briefs", listColl("briefs"));
   }
   if (["owner", "manager", "finance", "headbar"].includes(r0.data)) subscribe(S.db.collection("cash").orderBy("month", "desc").limit(13), "cash", listColl("cash"));
@@ -475,6 +500,7 @@ async function startData(session) {
   subscribe(S.db.collection("calib").orderBy("date", "desc").limit(31), "calibs", listColl("calibs"));
   subscribe(S.db.collection("docs"), "docs", listColl("docs"));
   subscribe(S.db.collection("voucher").orderBy("month", "desc").limit(12), "vouchers", listColl("vouchers"));
+  subscribe(S.db.collection("shift").orderBy("month", "desc").limit(4), "shifts", listColl("shifts"));
 }
 
 const ICON = {
@@ -612,7 +638,7 @@ function guideData() {
       monthly: [
         {t: "Tutup laporan laba-rugi", d: "Pastikan laporan Olsera dan biaya bulan itu lengkap, lalu unduh laporan laba-rugi.", b: B("Laba-rugi", "nav", 'data-v="keuangan"')},
         {t: "Rekap absensi untuk gaji", d: "Hari hadir, total jam, dan lupa check-out per staf ada di Absensi → Rekap bulanan.", b: B("Rekap absensi", "nav", 'data-v="absen"')},
-        {t: "Isi total gaji bulan ini", d: "Pokok, kasbon, potongan, dan gaji bersih dari file gaji. Rincian per orang tetap di file.", b: B("Gaji", "goFin", 'data-v="gaji"')},
+        {t: "Simpan gaji bulan ini", d: "Atur gaji pokok tiap staf, isi kasbon dan bonus, lalu Simpan ke laporan. Absen dan telat dihitung dari jadwal shift.", b: B("Gaji", "goFin", 'data-v="gaji"')},
         {t: "Laporan food cost dan pembelian", d: "Unduh laporan CSV dari Analitik: pendapatan, HPP, diskon, dan bahan.", b: B("Analitik", "nav", 'data-v="analitik"')}],
       tips: ["HPP di Olsera bergantung pada harga modal yang diisi di Olsera. Untuk laporan laba, bandingkan dengan pemakaian riil dari closing dan nota pembelian.", "Finance bisa melihat stok dan order, tetapi persetujuan order tetap di Manager."]},
     manager: {intro: "Kamu memegang kendali penuh: menyiapkan data, menyetujui order, dan membaca angka. Selesaikan persiapan awal sekali, lalu jalankan rutinitas harian.",
@@ -702,6 +728,7 @@ function viewHome() {
     if (["headbar", "manager"].includes(r) && h >= 10 && !S.calibs.some(c => c.date === t)) notes.push(`<div class="alert warn"><div class="grow"><b>Kalibrasi espresso</b> hari ini belum dicatat</div><button class="btn sm" data-act="calib">Catat</button></div>`); }
   if ((r === "gudang" || r === "manager") && S.orders.some(o => o.status === "dipesan")) notes.push(`<div class="alert acc"><div class="grow"><b>${S.orders.filter(o => o.status === "dipesan").length} order</b> sudah dipesan, tunggu barang datang</div><button class="btn sm" data-act="nav" data-v="order">Terima</button></div>`);
   if ((r === "manager" || r === "finance") && (!lastSale || lastSale.date < addDays(t, -1))) notes.push(`<div class="alert warn"><div class="grow">Data penjualan Olsera kemarin belum diunggah</div><button class="btn sm" data-act="nav" data-v="sales">Unggah</button></div>`);
+  if (canFin()) { const dp = openPay().filter(p => p.due && p.due <= addDays(t, 3)); if (dp.length) notes.unshift(`<div class="alert ${dp.some(p => p.due < t) ? "crit" : "warn"}"><div class="grow"><b>${dp.length} invoice supplier</b> jatuh tempo ≤3 hari · ${rp(dp.reduce((s, p) => s + (+p.amt || 0) - paidOf(p), 0))}</div><button class="btn sm" data-act="goUtang">Lihat</button></div>`); }
   const closeChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
   const quick = [];
   if (["headbar", "kitchen", "manager"].includes(r)) quick.push(qa("move", "take", "out", "Ambil stok"), qa("waste", "", "waste", "Waste"), qa("closing", "", "closing", "Closing"));
@@ -710,6 +737,7 @@ function viewHome() {
   const recent = S.moves.slice(0, 2).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 6);
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
   <div class="qa">${quick.join("")}</div>
+  ${targetCard()}
   ${briefPanel()}
   <div class="grid3">
     <div class="kpi"><span class="eyebrow">Bahan menipis</span><span class="v" style="color:${low.length ? "var(--crit)" : "inherit"}">${low.length}</span></div>
@@ -1637,10 +1665,11 @@ function viewFinance() {
     if (!has(S.ui.finMonth)) { const last = [...S.cash, ...S.expenses].map(e => e.month).filter(Boolean).sort().pop(); if (last) S.ui.finMonth = last; }
   }
   const tab = S.ui.finTab, mo = S.ui.finMonth, months = finMonths();
-  const add = tab === "kas" ? `<button class="btn pri" data-act="cashNew">Input kas shift</button>` : tab === "gaji" ? `<button class="btn pri" data-act="payEdit">Isi total gaji</button>` : tab === "harga" ? "" : `<button class="btn pri" data-act="expense">Catat pengeluaran</button>`;
+  const add = tab === "utang" ? `<button class="btn pri" data-act="invoice">Catat invoice</button>` : tab === "kas" ? `<button class="btn pri" data-act="cashNew">Input kas shift</button>` : tab === "gaji" ? `<button class="btn" data-act="payEdit">Isi total manual</button>` : tab === "harga" ? "" : `<button class="btn pri" data-act="expense">Catat pengeluaran</button>`;
   const head = `<div class="pagehead"><div><div class="eyebrow">Laporan bulanan</div><h1>Keuangan</h1></div>
-    <div class="row">${tab !== "harga" ? `<select id="fin-month" data-ui="finMonth" style="width:auto" aria-label="Bulan">${months.map(m => `<option value="${m}" ${m === mo ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>` : ""}${add}</div></div>
-    <div class="seg">${[["pl", "Laba-rugi"], ["kas", "Kas harian"], ["biaya", "Pengeluaran"], ["gaji", "Gaji"], ["harga", "Harga bahan"]].map(([k, l]) => `<button data-act="ui" data-k="finTab" data-v="${k}" aria-pressed="${tab === k}">${l}${k === "harga" && priceAlerts().length ? `<span class="badge">${priceAlerts().length}</span>` : ""}</button>`).join("")}</div>`;
+    <div class="row">${!["harga", "utang"].includes(tab) ? `<select id="fin-month" data-ui="finMonth" style="width:auto" aria-label="Bulan">${months.map(m => `<option value="${m}" ${m === mo ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>` : ""}${add}</div></div>
+    <div class="seg">${[["pl", "Laba-rugi"], ["kas", "Kas harian"], ["biaya", "Pengeluaran"], ["gaji", "Gaji"], ["utang", "Utang"], ["harga", "Harga bahan"]].map(([k, l]) => `<button data-act="ui" data-k="finTab" data-v="${k}" aria-pressed="${tab === k}">${l}${k === "harga" && priceAlerts().length ? `<span class="badge">${priceAlerts().length}</span>` : ""}${k === "utang" && openPay().some(p => p.due && p.due < today()) ? `<span class="badge">!</span>` : ""}</button>`).join("")}</div>`;
+  if (tab === "utang") return head + viewPayables();
   if (tab === "biaya") return head + viewExpenses(mo);
   if (tab === "kas") return head + viewCash(mo);
   if (tab === "gaji") return head + viewPayroll(mo);
@@ -1657,6 +1686,7 @@ function viewPnl(mo) {
     <div class="kpi"><span class="eyebrow">Total beban operasional</span><span class="v">${rpk(P.beban)}</span><span class="small muted">${pc(P.beban)} pendapatan</span></div>
     <div class="kpi"><span class="eyebrow">Laba sebelum saving</span><span class="v">${rpk(P.laba)}</span><span class="small muted">margin ${pc(P.laba)}</span></div>
     <div class="kpi"><span class="eyebrow">Net profit nyata</span><span class="v" style="color:${P.net < 0 ? "var(--crit)" : "var(--ok)"}">${rpk(P.net)}</span><span class="small muted">setelah saving ${rpk(P.saving)}</span></div></div>
+  ${primeCard(P)}
   ${au.length ? `<section class="panel"><h2>Temuan pemeriksaan</h2><div style="display:grid;gap:8px">${au.map(([c, t, d]) => `<div class="alert ${c}"><div class="grow"><b>${t}</b><div class="small">${d}</div></div></div>`).join("")}</div></section>` : ""}
   <section class="panel"><div class="panel-h"><h2>Laporan laba rugi · ${monthLabel(mo)}</h2>${S.dl ? `<button class="btn sm" data-act="exportPnl">Unduh CSV</button>` : ""}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Pos</th><th class="r">Rupiah</th><th class="r">% pendapatan</th></tr></thead><tbody>
@@ -1762,8 +1792,8 @@ async function submitCash(form) {
 }
 function viewPayroll(mo) {
   const p = payrollOf(mo), all = [...S.payroll].sort((a, b) => b.month.localeCompare(a.month));
-  return `<div class="alert acc"><div class="grow small">Yang disimpan di sini hanya <b>total</b> gaji per bulan. Rincian per orang tetap di file gaji, karena semua pengguna aplikasi berbagi satu database dan PIN bukan pengaman.</div></div>
-  <section class="panel"><div class="panel-h"><h2>Gaji · ${monthLabel(mo)}</h2>${["manager", "finance"].includes(role()) ? `<button class="btn sm" data-act="payEdit">${p ? "Ubah" : "Isi"}</button>` : ""}</div>
+  return `${viewPayPeople(mo)}
+  <section class="panel"><div class="panel-h"><h2>Total gaji di laporan · ${monthLabel(mo)}</h2>${["manager", "finance"].includes(role()) ? `<button class="btn sm" data-act="payEdit">${p ? "Ubah" : "Isi"}</button>` : ""}</div>
     ${p ? `<div class="list">
       <div class="li"><span class="grow">Gaji pokok<span class="sub small muted">${p.n || "-"} karyawan</span></span><span class="num">${rp(p.pokok)}</span></div>
       <div class="li"><span class="grow">(−) Kasbon dipotong<span class="sub small muted">sudah dibayar lebih dulu, tercatat di pengeluaran kategori Gaji</span></span><span class="num">${rp(p.kasbon)}</span></div>
@@ -2239,9 +2269,11 @@ function viewAbsen() {
       <div class="tbl-wrap"><table><thead><tr><th>Nama</th><th>Peran</th><th class="r">Hari hadir</th><th class="r">Total jam</th><th class="r">Lupa check-out</th></tr></thead><tbody>
       ${staff.map(([id, s]) => { const g = R[id] || {hadir: 0, jam: 0, open: 0}; return `<tr><td>${esc(s.name)}</td><td class="muted">${ROLES[s.role]}</td><td class="r num">${g.hadir}</td><td class="r num">${fq(g.jam)}</td><td class="r">${g.open ? `<span class="chip warn">${g.open}</span>` : "-"}</td></tr>`; }).join("")}</tbody></table></div></section>`;
   }
-  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Absensi</h1></div></div>
+  const absSeg = `<div class="seg">${[["hari", "Hari ini"], ["jadwal", "Jadwal shift"]].map(([k, l]) => `<button data-act="ui" data-k="absTab" data-v="${k}" aria-pressed="${(S.ui.absTab || "hari") === k}">${l}</button>`).join("")}</div>`;
+  if (S.ui.absTab === "jadwal") return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Absensi</h1></div></div>${absSeg}${viewShift()}`;
+  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Absensi</h1></div></div>${absSeg}
   ${role() === "crew" ? viewGuide() : ""}
-  <section class="panel"><div class="panel-h"><h2>Absen kamu</h2>${mine?.in ? `<span class="chip ok">Masuk ${ftime(mine.in.ts)}</span>` : ""}${mine?.out ? `<span class="chip">Pulang ${ftime(mine.out.ts)}</span>` : ""}</div>
+  <section class="panel"><div class="panel-h"><h2>Absen kamu ${myShiftChip()}</h2>${mine?.in ? `<span class="chip ok">Masuk ${ftime(mine.in.ts)}</span>` : ""}${mine?.out ? `<span class="chip">Pulang ${ftime(mine.out.ts)}</span>` : ""}</div>
     ${!mine?.in ? `<p class="small muted" style="margin:0">Ambil selfie di area outlet sebagai bukti kehadiran.</p><div><button class="btn pri" data-act="absenNow">Check-in dengan selfie</button></div>` : !mine.out ? `<div><button class="btn pri" data-act="absenNow">Check-out dengan selfie</button></div>` : `<div class="small muted">Absensi hari ini lengkap. Sampai besok.</div>`}</section>
   ${viewVoucher()}
   ${["manager", "headbar"].includes(role()) ? `<section class="panel"><h2>Kehadiran hari ini</h2><div class="list">${staff.map(([id, s]) => { const r = att?.rec?.[id]; return `<div class="li"><div class="row" style="gap:10px;flex-wrap:nowrap;min-width:0">${pic(r?.in) || '<span class="thumb"></span>'}<div class="grow" style="min-width:0"><b>${esc(s.name)}</b><span class="sub small muted">${ROLES[s.role]}</span></div></div>
@@ -2286,10 +2318,11 @@ async function submitAbsen(form) {
 /* ---------- SETTINGS ---------- */
 function viewSettings() {
   let tab = S.ui.setTab;
-  const tabs = [["staf", "Staf"], ["sop", "SOP & kalibrasi"], ["umum", "Umum"]];
+  const tabs = [["staf", "Staf"], ["notif", "Target & notifikasi"], ["sop", "SOP & kalibrasi"], ["umum", "Umum"]];
   if (!tabs.some(x => x[0] === tab)) tab = S.ui.setTab = "staf";
   let body = "";
   if (tab === "sop") body = sopSettings();
+  if (tab === "notif") { if (!S.tg && !S.tgLoading) { S.tgLoading = true; loadTg(); } body = viewNotifSettings(); }
   if (tab === "staf") {
     const st = Object.entries(S.staff).sort((a, b) => a[1].name.localeCompare(b[1].name));
     body = `<section class="panel"><div class="panel-h"><h2>Staf (${st.length})</h2><button class="btn pri" data-act="staff">Tambah staf</button></div>
@@ -2387,6 +2420,268 @@ function confirmBox(title, text, label, fn) {
   openModal(`<div class="modal" role="alertdialog" aria-label="${esc(title)}"><h2>${esc(title)}</h2><p style="margin:0">${esc(text)}</p><div class="foot"><button class="btn" data-act="close">Batal</button><button class="btn pri" data-act="confirmYes">${esc(label)}</button></div></div>`);
 }
 
+/* ---------- V2: target & prime cost, jadwal shift → gaji, utang supplier, notifikasi Telegram ---------- */
+const canFin = () => ["owner", "manager", "finance"].includes(realRole());
+const canShift = () => ["owner", "manager", "headbar"].includes(realRole());
+
+/* ===== Target & prime cost ===== */
+const tgtMonth = () => +S.settings.tgtMonth || 0;
+const primeMax = () => +S.settings.primeMax || 60;
+function revenueOn(date) {
+  const c = cashEntries(date.slice(0, 7)).filter(x => x.date === date);
+  if (c.length) return c.reduce((s, x) => s + cashTotal(x), 0);
+  return S.daily.find(x => x.date === date)?.pl?.revenue || 0;
+}
+function targetCard() {
+  if (!canFin() || !tgtMonth()) return "";
+  const t = today(), mo = t.slice(0, 7), dim = daysInMonth(mo), day = +t.slice(8);
+  let mtd = 0; for (let d = 1; d <= day; d++) mtd += revenueOn(mo + "-" + pad(d));
+  const y = addDays(t, -1), ry = revenueOn(y), td = tgtMonth() / dim, pace = (day - 1) / dim, got = mtd / tgtMonth();
+  const ok = got >= pace;
+  return `<section class="panel tgt"><div class="panel-h"><h2>Target ${monthLabel(mo)}</h2><span class="chip ${ok ? "ok" : "warn"}">${ok ? "Sesuai jalur" : "Di bawah jalur"}</span></div>
+    <div class="tgt-row"><div><div class="big num">${rpk(mtd)}</div><div class="small muted">dari ${rpk(tgtMonth())} · ${pct(got)}</div></div>
+      <div class="r"><div class="num"><b>${ry ? rpk(ry) : "-"}</b></div><div class="small muted">kemarin · target ${rpk(td)}/hari</div></div></div>
+    <div class="bar tgt-bar"><i style="width:${Math.min(100, got * 100)}%"></i><s style="left:${Math.min(100, pace * 100)}%"></s></div></section>`;
+}
+function primeCard(P) {
+  const r = P.rev || 0; if (!r) return "";
+  const cogs = P.bb + P.vendor, lab = P.labor, pc = (cogs + lab) / r, mx = primeMax() / 100;
+  const cls = pc <= mx ? "ok" : pc <= mx + .05 ? "warn" : "crit";
+  return `<section class="panel"><div class="panel-h"><h2>Prime cost</h2><span class="chip ${cls}">${pct(pc)} · batas ${pct(mx)}</span></div>
+    <div class="stack"><i style="width:${Math.min(100, cogs / r * 100)}%;background:var(--brand)"></i><i style="width:${Math.min(100, lab / r * 100)}%;background:var(--black)"></i><s style="left:${Math.min(100, mx * 100)}%"></s></div>
+    <div class="row small"><span><span class="dot" style="background:var(--brand)"></span>Bahan & vendor ${rpk(cogs)} · ${pct(cogs / r)}</span><span><span class="dot" style="background:var(--black)"></span>Gaji ${rpk(lab)} · ${pct(lab / r)}</span></div>
+    <p class="small muted" style="margin:0">Prime cost = (bahan baku + produk vendor + gaji) ÷ pendapatan. Batas sehat F&B umumnya 55–65%; ubah batas di Pengaturan → Target & notifikasi.</p></section>`;
+}
+
+/* ===== Jadwal shift ===== */
+const DEF_SHIFTS = [{k: "P", n: "Pagi", s: "07:00", e: "15:00"}, {k: "S", n: "Siang", s: "11:00", e: "19:00"}, {k: "M", n: "Malam", s: "15:00", e: "23:00"}];
+const shiftDefs = () => (Array.isArray(S.settings.shifts) && S.settings.shifts.length ? S.settings.shifts : DEF_SHIFTS);
+const shiftDef = k => shiftDefs().find(x => x.k === k);
+const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 10;
+const planOf = date => S.shifts.find(x => x.month === date.slice(0, 7))?.plan?.[date] || {};
+function shiftLabel(k) { if (k === "L") return "Libur"; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
+function weekStart(d) { const x = new Date(d + "T12:00:00"); const dw = (x.getDay() + 6) % 7; return addDays(d, -dw); }
+function myShiftChip() { const k = planOf(today())[S.me]; return k ? `<span class="chip ${k === "L" ? "" : "acc"}">${esc(shiftLabel(k))}</span>` : ""; }
+function viewShift() {
+  const ws = S.ui.wk || weekStart(today()), days = [...Array(7)].map((_, i) => addDays(ws, i)), edit = canShift();
+  const staff = Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const opts = [["", "–"], ...shiftDefs().map(d => [d.k, d.k]), ["L", "L"]];
+  const cell = (d, id) => { const k = planOf(d)[id] || "";
+    return edit ? `<select class="sh-sel sh-${k || "x"}" data-shift="${d}" data-sid="${id}" aria-label="Shift ${esc(S.staff[id].name)} ${d}">${opts.map(([v, l]) => `<option value="${v}" ${v === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
+      : `<span class="sh sh-${k || "x"}">${k || "–"}</span>`; };
+  const count = d => Object.values(planOf(d)).filter(k => k && k !== "L").length;
+  return `<section class="panel"><div class="panel-h"><div class="row"><button class="btn sm" data-act="wk" data-v="-7" aria-label="Minggu sebelumnya">‹</button><h2 style="margin:0 4px">${fdate(days[0])} – ${fdate(days[6])}</h2><button class="btn sm" data-act="wk" data-v="7" aria-label="Minggu berikutnya">›</button></div>
+      ${edit ? `<button class="btn sm" data-act="copyWeek">Salin minggu lalu</button>` : ""}</div>
+    <div class="tbl-wrap"><table class="shift-tbl"><thead><tr><th>Staf</th>${days.map(d => `<th class="c ${d === today() ? "today" : ""}">${fdate(d).split(",")[0]}<span class="sub">${+d.slice(8)}</span></th>`).join("")}</tr></thead><tbody>
+      ${staff.map(([id, s]) => `<tr class="${id === S.me ? "me" : ""}"><td><b>${esc(s.name)}</b><span class="sub">${ROLES[s.role]}</span></td>${days.map(d => `<td class="c">${cell(d, id)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="8" class="muted">Belum ada staf. Tambah di Pengaturan → Staf.</td></tr>`}
+      <tr><td class="small muted">Masuk</td>${days.map(d => `<td class="c small muted num">${count(d) || ""}</td>`).join("")}</tr></tbody></table></div>
+    <div class="row small muted">${shiftDefs().map(d => `<span><b>${d.k}</b> ${esc(d.n)} ${d.s}–${d.e}</span>`).join("")}<span><b>L</b> Libur</span><span>Telat bila masuk lewat ${tolTelat()} menit</span></div></section>`;
+}
+async function saveShift(date, sid, k) {
+  const mo = date.slice(0, 7);
+  await guard(() => mergeDoc("shift/" + mo, {plan: {[date]: {[sid]: k}}}, {month: mo}));
+}
+async function copyWeek() {
+  const ws = S.ui.wk || weekStart(today()), patch = {};
+  for (let i = 0; i < 7; i++) { const d = addDays(ws, i), src = planOf(addDays(d, -7)); if (Object.keys(src).length) (patch[d.slice(0, 7)] ||= {})[d] = src; }
+  if (!Object.keys(patch).length) return toast("Minggu lalu belum ada jadwal.");
+  const ok = await guard(async () => { for (const [mo, plan] of Object.entries(patch)) await mergeDoc("shift/" + mo, {plan}, {month: mo}); });
+  if (ok) toast("Jadwal minggu lalu disalin.");
+}
+/* attendance vs schedule for one staff in a month */
+function attStats(mo, sid) {
+  const last = mo === today().slice(0, 7) ? today() : mo + "-" + pad(daysInMonth(mo));
+  const g = {jadwal: 0, hadir: 0, absen: 0, telat: 0, telatMin: 0, tanpaJadwal: 0};
+  for (let d = 1; d <= daysInMonth(mo); d++) {
+    const ds = mo + "-" + pad(d); if (ds > last) break;
+    const k = planOf(ds)[sid], rec = S.attendance.find(a => a.date === ds)?.rec?.[sid];
+    if (rec?.in) g.hadir++;
+    if (!k || k === "L") { if (rec?.in) g.tanpaJadwal++; continue; }
+    if (ds === today() && !rec?.in) continue;
+    g.jadwal++;
+    if (!rec?.in) { g.absen++; continue; }
+    const def = shiftDef(k); if (!def) continue;
+    const late = (rec.in.ts - new Date(ds + "T" + def.s + ":00").getTime()) / 60000;
+    if (late > tolTelat()) { g.telat++; g.telatMin += Math.round(late); }
+  }
+  return g;
+}
+
+/* ===== Gaji per orang ===== */
+const salaryOf = sid => S.salary[sid] || {};
+function payRows(mo) {
+  const saved = payrollOf(mo)?.people || {};
+  return Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, s]) => {
+    const sal = salaryOf(id), a = attStats(mo, id), pk = +sal.pokok || 0, pa = sal.potAbsen != null && sal.potAbsen !== "" ? +sal.potAbsen : Math.round(pk / 26), pt = +sal.potTelat || 0;
+    const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0;
+    const potA = a.absen * pa, potT = a.telat * pt, net = pk - kas - potA - potT + bon;
+    return {id, name: s.name, role: s.role, a, pk, pa, pt, kas, bon, potA, potT, net};
+  });
+}
+function viewPayPeople(mo) {
+  const rows = payRows(mo), saved = payrollOf(mo)?.people;
+  const tot = k => rows.reduce((s, r) => s + r[k], 0);
+  const noSal = rows.filter(r => !r.pk).length;
+  return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
+    <p class="small muted" style="margin:0">Absen dan telat dihitung otomatis dari Jadwal shift dan absensi selfie. Isi kasbon dan bonus di tabel. Data ini hanya terlihat oleh Owner, Manager, dan Finance.</p>
+    ${noSal ? `<div class="alert warn"><div class="grow small"><b>${noSal} staf</b> belum punya gaji pokok. Klik nama untuk mengatur.</div></div>` : ""}
+    <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Jadwal</th><th class="r">Absen</th><th class="r">Telat</th><th class="r">Pokok</th><th class="r">Pot. absen</th><th class="r">Pot. telat</th><th class="r">Kasbon</th><th class="r">Bonus</th><th class="r">Bersih</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><button class="linkbtn" data-act="salEdit" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
+      <td class="r num">${r.a.jadwal}</td><td class="r num">${r.a.absen ? `<span class="chip crit">${r.a.absen}</span>` : 0}</td><td class="r num">${r.a.telat ? `<span class="chip warn">${r.a.telat}</span><span class="sub">${r.a.telatMin} mnt</span>` : 0}</td>
+      <td class="r num">${r.pk ? rp(r.pk) : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA)}</td><td class="r num">${rp(r.potT)}</td>
+      <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.kas || ""}" data-pp="kasbon" data-sid="${r.id}" aria-label="Kasbon ${esc(r.name)}"></td>
+      <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.bon || ""}" data-pp="bonus" data-sid="${r.id}" aria-label="Bonus ${esc(r.name)}"></td>
+      <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="10" class="muted">Belum ada staf aktif.</td></tr>`}
+    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${tot2(rows, r => r.a.absen)}</td><td class="r num">${tot2(rows, r => r.a.telat)}</td><td class="r num">${rp(tot("pk"))}</td><td class="r num">${rp(tot("potA"))}</td><td class="r num">${rp(tot("potT"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
+    </tbody></table></div></section>`;
+}
+const tot2 = (rows, f) => rows.reduce((s, r) => s + f(r), 0);
+async function setPayPerson(sid, k, v) {
+  const mo = S.ui.finMonth;
+  await guard(() => mergeDoc("payroll/" + mo, {people: {[sid]: {[k]: num(v)}}}, {month: mo}));
+}
+async function savePayPeople() {
+  const mo = S.ui.finMonth, rows = payRows(mo), sum = f => rows.reduce((s, r) => s + f(r), 0);
+  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, absen: r.a.absen, telat: r.a.telat, telatMin: r.a.telatMin, pokok: r.pk, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, bersih: r.net});
+  const d = {month: mo, n: rows.length, pokok: sum(r => r.pk), kasbon: sum(r => r.kas), potAbsen: sum(r => r.potA), potTelat: sum(r => r.potT), bonus: sum(r => r.bon), bersih: sum(r => r.net), people, src: "per orang", by: S.me, ts: Date.now()};
+  if (await guard(() => mergeDoc("payroll/" + mo, d, {}))) toast("Gaji " + monthLabel(mo) + " tersimpan: " + rp(d.bersih) + ". Laba-rugi ikut diperbarui.");
+}
+function modalSalary(id) {
+  const s = salaryOf(id), st = S.staff[id];
+  openModal(`<form data-submit="salary" data-id="${id}" class="modal" role="dialog" aria-label="Gaji"><div class="modal-h"><h2>Gaji · ${esc(st?.name || "")}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f">Gaji pokok per bulan<input name="pokok" type="number" min="0" step="10000" value="${s.pokok ?? ""}" required></label>
+    <label class="f">Potongan per hari absen<input name="potAbsen" type="number" min="0" step="1000" value="${s.potAbsen ?? ""}" placeholder="kosong = pokok ÷ 26"></label>
+    <label class="f">Potongan per kali telat<input name="potTelat" type="number" min="0" step="1000" value="${s.potTelat ?? ""}" placeholder="0 = tidak dipotong"></label></div>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitSalary(f) {
+  const d = {pokok: num(f.pokok.value), potAbsen: f.potAbsen.value === "" ? "" : num(f.potAbsen.value), potTelat: num(f.potTelat.value), ts: Date.now(), by: S.me};
+  if (await guard(() => S.db.doc("salary/" + f.dataset.id).set(d))) { closeModal(); toast("Gaji tersimpan."); }
+}
+
+/* ===== Utang supplier ===== */
+const paidOf = p => Object.values(p.paid || {}).reduce((s, x) => s + (+x.amt || 0), 0);
+const openPay = () => S.payables.filter(p => !p.void && paidOf(p) < (+p.amt || 0) - 1);
+function dueTag(p) {
+  if (!p.due) return `<span class="chip">Tanpa jatuh tempo</span>`;
+  const d = Math.round((new Date(p.due + "T12:00:00") - new Date(today() + "T12:00:00")) / 864e5);
+  return d < 0 ? `<span class="chip crit">Lewat ${-d} hari</span>` : d === 0 ? `<span class="chip warn">Hari ini</span>` : d <= 3 ? `<span class="chip warn">${d} hari lagi</span>` : `<span class="chip">${fdate(p.due)}</span>`;
+}
+function viewPayables() {
+  const open = openPay().sort((a, b) => (a.due || "9").localeCompare(b.due || "9")), t = today();
+  const done = S.payables.filter(p => !p.void && !open.includes(p)).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 20);
+  const sisa = p => (+p.amt || 0) - paidOf(p), sum = arr => arr.reduce((s, p) => s + sisa(p), 0);
+  const late = open.filter(p => p.due && p.due < t), soon = open.filter(p => p.due && p.due >= t && p.due <= addDays(t, 7));
+  const row = p => `<div class="li"><div class="grow"><b>${esc(p.supplier || "-")}</b> ${dueTag(p)}<span class="sub small muted">${esc(p.inv || "tanpa nomor")} · ${fdate(p.date)}${paidOf(p) ? ` · dibayar ${rp(paidOf(p))}` : ""}${p.note ? " · " + esc(p.note) : ""}</span></div>
+    <div class="r"><div class="num"><b>${rp(sisa(p))}</b></div>${sisa(p) > 1 ? `<button class="btn sm" data-act="payInv" data-id="${p.id}">Bayar</button>` : `<span class="chip ok">Lunas</span>`}</div></div>`;
+  return `<div class="grid3">
+    <div class="kpi"><span class="eyebrow">Utang terbuka</span><span class="v">${rpk(sum(open))}</span><span class="small muted">${open.length} invoice</span></div>
+    <div class="kpi"><span class="eyebrow">Lewat jatuh tempo</span><span class="v" style="color:${late.length ? "var(--crit)" : "inherit"}">${rpk(sum(late))}</span><span class="small muted">${late.length} invoice</span></div>
+    <div class="kpi"><span class="eyebrow">Jatuh tempo 7 hari</span><span class="v">${rpk(sum(soon))}</span><span class="small muted">${soon.length} invoice</span></div>
+    <div class="kpi"><span class="eyebrow">Order diterima belum ditagih</span><span class="v">${unbilledOrders().length}</span><span class="small muted">order</span></div></div>
+  <section class="panel"><div class="panel-h"><h2>Belum dibayar</h2></div>${open.length ? `<div class="list">${open.map(row).join("")}</div>` : `<div class="empty">Tidak ada utang terbuka.</div>`}</section>
+  ${done.length ? `<section class="panel"><h2>Lunas terakhir</h2><div class="list">${done.map(row).join("")}</div></section>` : ""}`;
+}
+const orderTotal = o => (o.lines || []).reduce((s, l) => s + (+(l.recvQty ?? l.qty) || 0) * (+l.price || +S.items[l.itemId]?.cost || 0), 0);
+const unbilledOrders = () => S.orders.filter(o => o.status === "diterima" && !S.payables.some(p => p.orderId === o.id && !p.void));
+function modalInvoice(orderId) {
+  const o = orderId ? S.orders.find(x => x.id === orderId) : null, sups = [...new Set([...itemsArr().map(i => i.supplier), ...S.payables.map(p => p.supplier)].filter(Boolean))].sort();
+  const ub = unbilledOrders();
+  openModal(`<form data-submit="invoice" data-order="${o ? o.id : ""}" class="modal" role="dialog" aria-label="Invoice supplier"><div class="modal-h"><h2>Catat invoice supplier</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${ub.length && !o ? `<label class="f">Dari order yang sudah diterima<select name="ord" data-act-change="invFromOrder"><option value="">Tidak, isi manual</option>${ub.map(x => `<option value="${x.id}">${esc(x.supplier || "Tanpa supplier")} · ${fdate(new Date(x.receivedAt || x.createdAt).toISOString().slice(0, 10))} · ${rp(orderTotal(x))}</option>`).join("")}</select></label>` : ""}
+    <div class="fgrid two"><label class="f">Supplier<input name="supplier" list="suplist" required maxlength="60" value="${esc(o?.supplier || "")}"></label><datalist id="suplist">${sups.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+    <label class="f">No. invoice / nota<input name="inv" maxlength="40"></label>
+    <label class="f">Tanggal invoice<input name="date" type="date" value="${today()}" required></label>
+    <label class="f">Jatuh tempo<input name="due" type="date" value="${addDays(today(), 14)}"></label>
+    <label class="f">Jumlah tagihan (Rp)<input name="amt" type="number" min="0" step="any" required value="${o ? Math.round(orderTotal(o)) : ""}"></label>
+    <label class="f">Kategori biaya saat dibayar<select name="cat">${EXP_CATS.filter(c => !["Saving", "Petty Cash", "Gaji"].includes(c)).map(c => `<option ${c === "BB Bar" ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+    <label class="f">Catatan<input name="note" maxlength="120"></label>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitInvoice(f) {
+  const amt = num(f.amt.value); if (!(amt > 0)) return toast("Isi jumlah tagihan.");
+  const id = uid(), d = {supplier: f.supplier.value.trim(), inv: f.inv.value.trim(), date: f.date.value, due: f.due.value, amt, cat: f.cat.value, note: f.note.value.trim(), orderId: f.dataset.order || f.ord?.value || "", paid: {}, by: S.me, ts: Date.now()};
+  if (await guard(() => S.db.doc("payables/" + id).set(d))) { closeModal(); toast("Invoice tercatat."); }
+}
+function modalPayInv(id) {
+  const p = S.payables.find(x => x.id === id); if (!p) return;
+  const sisa = (+p.amt || 0) - paidOf(p);
+  openModal(`<form data-submit="payInv" data-id="${id}" class="modal" role="dialog" aria-label="Bayar invoice"><div class="modal-h"><h2>Bayar ${esc(p.supplier)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f">Tanggal bayar<input name="date" type="date" value="${today()}" required></label><label class="f">Jumlah (Rp)<input name="amt" type="number" min="0" step="any" value="${Math.round(sisa)}" required></label>
+    <label class="f">Metode<select name="pay">${PAY_METHODS.map(m => `<option>${m}</option>`).join("")}</select></label>
+    <label class="f">Kategori biaya<select name="cat">${EXP_CATS.filter(c => !["Saving", "Petty Cash", "Gaji"].includes(c)).map(c => `<option ${c === (p.cat || "BB Bar") ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+    <label class="row small" style="gap:8px"><input type="checkbox" name="exp" checked style="width:auto"> Catat juga di Pengeluaran (masuk laba-rugi bulan pembayaran)</label>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan pembayaran</button></div></form>`);
+}
+async function submitPayInv(f) {
+  const p = S.payables.find(x => x.id === f.dataset.id); if (!p) return;
+  const amt = num(f.amt.value), date = f.date.value || today(), mo = date.slice(0, 7), pid = uid(), expId = f.exp.checked ? uid() : "";
+  if (!(amt > 0)) return toast("Isi jumlah.");
+  const ok = await guard(async () => {
+    if (expId) await mergeDoc("expenses/" + mo, {rec: {[expId]: {date, cat: f.cat.value, amt, pay: f.pay.value, note: "Bayar invoice " + (p.inv || "") + (p.note ? " · " + p.note : ""), to: p.supplier, payable: p.id, by: S.me, ts: Date.now()}}}, {month: mo});
+    await mergeDoc("payables/" + p.id, {paid: {[pid]: {date, amt, pay: f.pay.value, expId, by: S.me, ts: Date.now()}}}, {});
+  });
+  if (ok) { closeModal(); toast("Pembayaran tercatat" + (expId ? " dan masuk Pengeluaran." : ".")); }
+}
+
+/* ===== Target & notifikasi (Pengaturan) ===== */
+function viewNotifSettings() {
+  const tg = S.tg, nf = S.notify;
+  const tgPanel = !tg ? `<div class="small muted">Memuat status Telegram…</div>`
+    : !tg.hasToken ? `<ol class="steps"><li>Buka Telegram, cari <b>@BotFather</b>, kirim <code>/newbot</code>.</li><li>Beri nama, mis. <i>Rouna OS</i>, dan username yang berakhiran <i>bot</i>, mis. <i>rouna_os_bot</i>.</li><li>Salin token yang diberikan BotFather, tempel di bawah.</li></ol>
+        <form data-submit="tgToken" class="row"><input name="token" placeholder="123456789:AA…" autocomplete="off" style="flex:1 1 240px" required><button class="btn pri" type="submit">Hubungkan bot</button></form>`
+    : `<div class="li"><div class="grow"><b>@${esc(tg.bot)}</b><span class="sub small muted">Bot terhubung</span></div><a class="btn sm" href="https://t.me/${esc(tg.bot)}" target="_blank" rel="noopener">Buka bot</a></div>
+       <div><div class="eyebrow" style="margin:4px 0 6px">Penerima</div>${tg.chats.length ? `<div class="list">${tg.chats.map(c => `<div class="li"><span class="grow">${esc(c.name)}</span><button class="btn sm ghost" data-act="tgUnlink" data-id="${c.id}">Hapus</button></div>`).join("")}</div>` : `<div class="small muted">Belum ada penerima.</div>`}</div>
+       <p class="small muted" style="margin:0">Tambah penerima: buka bot lalu tekan <b>Start</b> (atau tambahkan bot ke grup Telegram tim lalu kirim <code>/start</code>), kemudian klik Cek penerima baru.</p>
+       <div class="row"><button class="btn" data-act="tgLink">Cek penerima baru</button><button class="btn" data-act="tgSend" data-k="morning" ${tg.chats.length ? "" : "disabled"}>Kirim ringkasan sekarang</button></div>`;
+  const tog = (k, l, d) => `<label class="li" style="cursor:pointer"><span class="grow"><b>${l}</b><span class="sub small muted">${d}</span></span><input type="checkbox" data-notif="${k}" ${nf[k] === false ? "" : "checked"} style="width:auto"></label>`;
+  return `<form class="panel" data-submit="target"><h2>Target & batas biaya</h2>
+      <div class="fgrid two"><label class="f">Target omzet per bulan (Rp)<input name="tgtMonth" type="number" min="0" step="1000000" value="${tgtMonth() || ""}" placeholder="mis. 250000000"></label>
+      <label class="f">Batas prime cost (%)<input name="primeMax" type="number" min="20" max="90" step="1" value="${primeMax()}"></label></div>
+      <div><button class="btn pri" type="submit">Simpan target</button></div></form>
+    <section class="panel"><h2>Notifikasi Telegram</h2>${tgPanel}</section>
+    <section class="panel"><h2>Jadwal notifikasi</h2><div class="list">
+      ${tog("morning", "Ringkasan pagi · 07.45", "Penjualan kemarin vs target, closing, waste, stok menipis, order, utang jatuh tempo")}
+      ${tog("midday", "Cek siang · 14.00", "Hanya dikirim bila ada stok habis atau order menunggu persetujuan")}
+      ${tog("closing", "Pengingat closing · 23.15", "Hanya dikirim bila closing bar atau kitchen belum masuk")}</div></section>
+    <form class="panel" data-submit="shiftDefs"><h2>Jam shift</h2>
+      <div class="fgrid">${shiftDefs().map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d.k)}" maxlength="2" style="width:56px" aria-label="Kode"><input name="n${i}" value="${esc(d.n)}" maxlength="20" style="flex:1 1 120px" aria-label="Nama"><input name="s${i}" type="time" value="${d.s}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d.e}" style="width:auto" aria-label="Selesai"></div>`).join("")}
+      <div class="row"><input name="k3" placeholder="Kode" maxlength="2" style="width:56px"><input name="n3" placeholder="Shift tambahan (opsional)" maxlength="20" style="flex:1 1 120px"><input name="s3" type="time" style="width:auto"><input name="e3" type="time" style="width:auto"></div></div>
+      <label class="f" style="max-width:240px">Toleransi telat (menit)<input name="tol" type="number" min="0" max="120" value="${tolTelat()}"></label>
+      <div><button class="btn pri" type="submit">Simpan jam shift</button></div></form>`;
+}
+async function loadTg() { try { S.tg = await callFn("notify", {action: "status"}); } catch (e) { S.tg = {hasToken: false, chats: [], err: e.message}; } render(); }
+
+/* ===== hooks: actions, submits, change listeners ===== */
+const ACT2 = {
+  wk: b => { S.ui.wk = addDays(S.ui.wk || weekStart(today()), +b.dataset.v); render(); },
+  copyWeek: () => copyWeek(),
+  payPeopleSave: () => savePayPeople(),
+  salEdit: b => modalSalary(b.dataset.id),
+  invoice: () => modalInvoice(),
+  payInv: b => modalPayInv(b.dataset.id),
+  tgLink: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "link"}); toast(r.added.length ? "Terhubung: " + r.added.join(", ") : "Belum ada penerima baru. Pastikan sudah menekan Start di bot."); } catch (e) { toast(e.message); } loadTg(); },
+  tgUnlink: async b => { try { await callFn("notify", {action: "unlink", chatId: b.dataset.id}); } catch (e) { toast(e.message); } loadTg(); },
+  tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
+};
+const SUBMIT2 = {
+  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv,
+  target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
+  shiftDefs: async f => {
+    const list = []; for (let i = 0; i < 4; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && k !== "L" && n && s && e) list.push({k, n, s, e}); }
+    if (!list.length) return toast("Isi minimal satu shift.");
+    if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value))}))) toast("Jam shift tersimpan.");
+  },
+  tgToken: async f => { const b = f.querySelector("button"); b.disabled = true; try { const r = await callFn("notify", {action: "setToken", token: f.token.value}); toast("Bot @" + r.bot + " terhubung."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } }
+};
+document.addEventListener("change", e => {
+  const el = e.target;
+  if (el.dataset.shift) { el.className = "sh-sel sh-" + (el.value || "x"); saveShift(el.dataset.shift, el.dataset.sid, el.value); }
+  else if (el.dataset.pp) setPayPerson(el.dataset.sid, el.dataset.pp, el.value);
+  else if (el.dataset.notif) guard(() => mergeDoc("settings/notify", {[el.dataset.notif]: el.checked}, {}));
+  else if (el.name === "ord" && el.closest("form[data-submit=invoice]")) { const o = S.orders.find(x => x.id === el.value), f = el.form; if (o) { f.supplier.value = o.supplier || ""; f.amt.value = Math.round(orderTotal(o)); } }
+});
+
 /* ---------- events ---------- */
 const ACT = {
   nav: b => { S.view = b.dataset.v; S.ui.menuId = ""; S.ui.more = false; lsSet("runa_view", S.view); window.scrollTo(0, 0); render(); },
@@ -2394,6 +2689,7 @@ const ACT = {
   pick: b => { S.authUser = b.dataset.id; renderAuth(); setTimeout(() => $(S.authUser ? "#login-pin" : "#login-user")?.focus(), 30); },
   logout: async () => { S.session = null; try { S.db?.close(); await SB.auth.signOut(); } catch (e) {} location.reload(); },
   more: () => { S.ui.more = !S.ui.more; render(); },
+  goUtang: () => { S.view = "keuangan"; S.ui.finTab = "utang"; render(); },
   hints: () => { S.hints = !S.hints; lsSet("rouna_hints", S.hints ? "1" : null); document.body.classList.toggle("hints", S.hints); render(); toast(S.hints ? "Petunjuk ditampilkan." : "Petunjuk disembunyikan."); },
   moreBg: (b, e) => { if (e.target === b) { S.ui.more = false; render(); } },
   backup: () => backupAll(),
@@ -2519,6 +2815,7 @@ const SUBMIT = {
     S.authUser = u; lsSet("runa_view", null); S.view = "home"; await startData(data.session);
   }
 };
+Object.assign(ACT, ACT2); Object.assign(SUBMIT, SUBMIT2);
 document.addEventListener("submit", e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (fn) fn(f); });
 
 document.body.classList.toggle("hints", S.hints);
