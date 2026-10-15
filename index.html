@@ -188,6 +188,8 @@ svg text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
 @media (min-width:900px){.login::before{left:auto;right:-14%;bottom:-38%;width:min(92vw,1400px)}}
 .li .sub{display:block}
 .top .who{margin-left:auto}
+.top .ctx{display:none}
+@media (min-width:900px){.top .ctx{display:block}}
 .top .brand .wm{height:18px}
 .more{position:fixed;inset:0;z-index:8;background:rgba(30,30,30,.35);display:flex;align-items:flex-end}
 .more .sheet{background:var(--surface);width:100%;border-radius:20px 20px 0 0;padding:18px 16px calc(84px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -497,7 +499,7 @@ function render() {
   $("#app").innerHTML = `<div class="shell">
     <nav class="side" aria-label="Menu"><div class="brand">${WM}<span class="os">OS</span></div>${allowed.map(n => navBtn(n, "side")).join("")}</nav>
     <div style="min-width:0">
-      <header class="top"><div class="brand">${WM}<span class="os">OS</span></div>
+      <header class="top"><div class="brand">${WM}<span class="os">OS</span></div><div class="ctx small muted">${esc(S.settings.outlet || "Coffee Rouna")} · ${fdate(today())}</div>
         <div class="who"><span class="chip acc">${ROLES[realRole()]}</span><b>${esc(me().name)}</b><button class="btn sm ghost" data-act="logout">Keluar</button></div></header>
       <main>${V()}</main>
     </div>
@@ -736,11 +738,11 @@ function viewStock() {
       <div class="seg">${[["", "Semua"], ["bar", "Bar"], ["kitchen", "Kitchen"]].map(([v, l]) => `<button data-act="ui" data-k="area" data-v="${v}" aria-pressed="${u.area === v}">${l}</button>`).join("")}</div>
       <div class="seg"><button data-act="ui" data-k="st" data-v="" aria-pressed="${!u.st}">Semua</button><button data-act="ui" data-k="st" data-v="low" aria-pressed="${!!u.st}">Menipis</button></div></div>
     <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Gudang</th><th class="r">Di area</th><th>Level gudang</th><th>Status</th></tr></thead><tbody>
-    ${list.map(i => { const s = stockOf(i.id), st = stockState(i), min = +i.min || 0, w = min ? Math.min(100, (s.gudang || 0) / (min * 3) * 100) : 100;
+    ${list.map(i => { const s = stockOf(i.id), st = stockState(i), min = +i.min || 0, w = min ? Math.min(100, (s.gudang || 0) / (min * 3) * 100) : 0;
       return `<tr><td><b>${esc(i.name)}</b><span class="sub">${esc(i.category || "Lainnya")} · ${AREAS[i.area] || "-"}</span></td>
       <td class="r num">${fq(s.gudang)} <span class="muted small">${esc(i.unit)}</span></td><td class="r num">${fq(s.area)}${+i.par ? `<span class="sub">par ${fq(i.par)}</span>` : ""}</td>
-      <td style="min-width:110px"><div class="bar ${st[0] !== "aman" ? "low" : ""}"><i style="width:${Math.max(2, w)}%"></i></div><span class="small muted">min ${fq(min)}</span></td>
-      <td><span class="chip ${st[1]}">${st[2]}</span></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Tidak ada bahan yang cocok.</td></tr>`}
+      <td style="min-width:110px">${min ? `<div class="bar ${st[0] !== "aman" ? "low" : ""}"><i style="width:${Math.max(2, w)}%"></i></div><span class="small muted">min ${fq(min)}</span>` : `<span class="small muted">Minimum belum diatur</span>`}</td>
+      <td>${min ? `<span class="chip ${st[1]}">${st[2]}</span>` : `<span class="chip">Atur min</span>`}</td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Tidak ada bahan yang cocok.</td></tr>`}
     </tbody></table></div></section>
   <section class="panel"><h2>Riwayat mutasi</h2>${recent.length ? `<div class="list">${recent.map(moveRow).join("")}</div>` : `<div class="small muted">Belum ada mutasi tercatat.</div>`}</section>`;
 }
@@ -1605,6 +1607,11 @@ function finMonths() {
   return [...s].sort().reverse();
 }
 function viewFinance() {
+  if (!S.ui.finAuto && (S.cash.length || S.expenses.length)) {
+    S.ui.finAuto = true;
+    const has = m => S.cash.some(c => c.month === m) || S.expenses.some(e => e.month === m);
+    if (!has(S.ui.finMonth)) { const last = [...S.cash, ...S.expenses].map(e => e.month).filter(Boolean).sort().pop(); if (last) S.ui.finMonth = last; }
+  }
   const tab = S.ui.finTab, mo = S.ui.finMonth, months = finMonths();
   const add = tab === "kas" ? `<button class="btn pri" data-act="cashNew">Input kas shift</button>` : tab === "gaji" ? `<button class="btn pri" data-act="payEdit">Isi total gaji</button>` : tab === "harga" ? "" : `<button class="btn pri" data-act="expense">Catat pengeluaran</button>`;
   const head = `<div class="pagehead"><div><div class="eyebrow">Format laporan keuangan Coffee Rouna</div><h1>Keuangan</h1></div>
@@ -1815,7 +1822,7 @@ function viewChecklist(keys) {
   return `<div class="grid2">${keys.map(k => { const r = doc?.runs?.[k], n = sopList(k).length;
     return `<section class="panel"><div class="panel-h"><h2>${SOP_DEF[k][0]}</h2>${r ? `<span class="chip ${r.done === r.total ? "ok" : "warn"}">${r.done}/${r.total} · ${ftime(r.ts)}</span>` : `<span class="chip">Belum</span>`}</div>
       ${r ? `<div class="small muted">Oleh ${esc(S.staff[r.by]?.name || "-")}${r.note ? " · " + esc(r.note) : ""}</div>${r.photo ? `<img class="thumb" style="width:72px;height:72px" src="${esc(photoSrc(r.photo)) || esc(r.photo.pic || "")}" alt="Foto checklist">` : ""}` : `<p class="small muted" style="margin:0">${n} langkah.</p>`}
-      <div><button class="btn ${r ? "" : "pri"}" data-act="sop" data-k="${k}">${r ? "Isi ulang" : "Isi checklist"}</button></div></section>`; }).join("")}</div>
+      <div><button class="btn sm" data-act="sop" data-k="${k}">${r ? "Isi ulang" : "Isi checklist"}</button></div></section>`; }).join("")}</div>
   ${showCal ? `<section class="panel"><div class="panel-h"><div><h2>Kalibrasi espresso hari ini</h2><span class="small muted">Target ${calTxt()}</span></div></div>
     ${calList.length ? `<div class="tbl-wrap"><table><thead><tr><th>Jam</th><th>Biji</th><th class="r">Grind</th><th class="r">Dose</th><th class="r">Yield</th><th class="r">Waktu</th><th>Rasa</th><th>Barista</th></tr></thead><tbody>
     ${calList.map(c => `<tr><td class="num">${ftime(c.ts)}</td><td>${esc(c.bean || "-")}</td><td class="r num">${esc(c.grind || "-")}</td><td class="r num">${fq(c.dose)} g</td><td class="r num">${fq(c.yld)} g</td><td class="r num">${fq(c.time)} s</td><td><span class="chip ${calOk(c) ? "ok" : "warn"}">${esc(c.taste)}</span>${c.note ? `<span class="sub">${esc(c.note)}</span>` : ""}</td><td class="small">${esc(S.staff[c.by]?.name || "-")}</td></tr>`).join("")}</tbody></table></div>` : `<div class="alert warn"><div class="grow">Belum ada kalibrasi hari ini. Kalibrasi sebelum shot pertama untuk tamu.</div><button class="btn sm" data-act="calib">Catat</button></div>`}</section>` : ""}
