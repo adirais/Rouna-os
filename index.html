@@ -2634,12 +2634,20 @@ function viewNotifSettings() {
        <div><div class="eyebrow" style="margin:4px 0 6px">Penerima</div>${tg.chats.length ? `<div class="list">${tg.chats.map(c => `<div class="li"><span class="grow">${esc(c.name)}</span><button class="btn sm ghost" data-act="tgUnlink" data-id="${c.id}">Hapus</button></div>`).join("")}</div>` : `<div class="small muted">Belum ada penerima.</div>`}</div>
        <p class="small muted" style="margin:0">Tambah penerima: buka bot lalu tekan <b>Start</b> (atau tambahkan bot ke grup Telegram tim lalu kirim <code>/start</code>), kemudian klik Cek penerima baru.</p>
        <div class="row"><button class="btn" data-act="tgLink">Cek penerima baru</button><button class="btn" data-act="tgSend" data-k="morning" ${tg.chats.length ? "" : "disabled"}>Kirim ringkasan sekarang</button></div>`;
+  const wa = tg?.wa || {hasToken: false, targets: []};
+  const waPanel = !tg ? `<div class="small muted">Memuat…</div>` : `
+    ${wa.hasToken ? "" : `<ol class="steps"><li>Siapkan <b>nomor WhatsApp khusus outlet</b> sebagai pengirim (jangan nomor pribadi; gateway tidak resmi bisa membuat nomor diblokir WhatsApp).</li><li>Daftar di <a href="https://fonnte.com" target="_blank" rel="noopener">fonnte.com</a>, tambah device dengan nomor itu, lalu scan QR dari WhatsApp di HP outlet.</li><li>Salin <b>token device</b> dari dashboard Fonnte, tempel di bawah.</li></ol>`}
+    <form data-submit="waSet" class="fgrid">
+      <label class="f">Token Fonnte${wa.hasToken ? " (kosongkan bila tetap)" : ""}<input name="token" autocomplete="off" placeholder="${wa.hasToken ? "••••••••  tersimpan" : "token device Fonnte"}" ${wa.hasToken ? "" : "required"}></label>
+      <label class="f">Nomor penerima (pisahkan dengan koma)<input name="targets" value="${esc((wa.targets || []).join(", "))}" placeholder="0812xxxx, 0813xxxx atau ID grup ...@g.us" required></label>
+      <div class="row"><button class="btn pri" type="submit">Simpan</button>${wa.hasToken ? `<button type="button" class="btn" data-act="waTest">Kirim pesan tes</button><button type="button" class="btn" data-act="tgSend" data-k="morning">Kirim ringkasan sekarang</button><button type="button" class="btn ghost" data-act="waOff">Matikan WA</button>` : ""}</div></form>`;
   const tog = (k, l, d) => `<label class="li" style="cursor:pointer"><span class="grow"><b>${l}</b><span class="sub small muted">${d}</span></span><input type="checkbox" data-notif="${k}" ${nf[k] === false ? "" : "checked"} style="width:auto"></label>`;
   return `<form class="panel" data-submit="target"><h2>Target & batas biaya</h2>
       <div class="fgrid two"><label class="f">Target omzet per bulan (Rp)<input name="tgtMonth" type="number" min="0" step="1000000" value="${tgtMonth() || ""}" placeholder="mis. 250000000"></label>
       <label class="f">Batas prime cost (%)<input name="primeMax" type="number" min="20" max="90" step="1" value="${primeMax()}"></label></div>
       <div><button class="btn pri" type="submit">Simpan target</button></div></form>
-    <section class="panel"><h2>Notifikasi Telegram</h2>${tgPanel}</section>
+    <section class="panel"><div class="panel-h"><h2>Notifikasi WhatsApp</h2>${tg?.wa?.hasToken ? `<span class="chip ok">Aktif</span>` : ""}</div>${waPanel}</section>
+    <section class="panel"><div class="panel-h"><h2>Notifikasi Telegram</h2><span class="chip">Opsional · gratis</span></div>${tgPanel}</section>
     <section class="panel"><h2>Jadwal notifikasi</h2><div class="list">
       ${tog("morning", "Ringkasan pagi · 07.45", "Penjualan kemarin vs target, closing, waste, stok menipis, order, utang jatuh tempo")}
       ${tog("midday", "Cek siang · 14.00", "Hanya dikirim bila ada stok habis atau order menunggu persetujuan")}
@@ -2661,6 +2669,8 @@ const ACT2 = {
   invoice: () => modalInvoice(),
   payInv: b => modalPayInv(b.dataset.id),
   tgLink: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "link"}); toast(r.added.length ? "Terhubung: " + r.added.join(", ") : "Belum ada penerima baru. Pastikan sudah menekan Start di bot."); } catch (e) { toast(e.message); } loadTg(); },
+  waTest: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "waTest"}); toast("Pesan tes terkirim ke " + r.sent + " nomor. Cek WhatsApp."); } catch (e) { toast(e.message); } b.disabled = false; },
+  waOff: async () => { try { await callFn("notify", {action: "waOff"}); toast("Notifikasi WhatsApp dimatikan."); } catch (e) { toast(e.message); } loadTg(); },
   tgUnlink: async b => { try { await callFn("notify", {action: "unlink", chatId: b.dataset.id}); } catch (e) { toast(e.message); } loadTg(); },
   tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
 };
@@ -2672,6 +2682,7 @@ const SUBMIT2 = {
     if (!list.length) return toast("Isi minimal satu shift.");
     if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value))}))) toast("Jam shift tersimpan.");
   },
+  waSet: async f => { const b = f.querySelector("button[type=submit]"); b.disabled = true; try { const r = await callFn("notify", {action: "waSet", token: f.token.value, targets: f.targets.value}); toast("Tersimpan: " + r.targets.length + " penerima. Klik Kirim pesan tes."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } },
   tgToken: async f => { const b = f.querySelector("button"); b.disabled = true; try { const r = await callFn("notify", {action: "setToken", token: f.token.value}); toast("Bot @" + r.bot + " terhubung."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } }
 };
 document.addEventListener("change", e => {

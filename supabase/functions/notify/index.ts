@@ -1,4 +1,4 @@
-// ROUNA OS — Telegram notifications (morning summary, midday stock/order alert, closing reminder)
+// ROUNA OS — notifications via Telegram and/or WhatsApp (Fonnte): morning summary, midday stock/order alert, closing reminder
 // verify_jwt is off: the app calls it with the user's session (checked below, Owner/Manager only),
 // and pg_cron calls it with a private key stored in public.secrets.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -101,11 +101,20 @@ async function tg(token: string, method: string, body: unknown) {
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return await r.json();
 }
+function toWa(html: string) {
+  return html.replace(/<\/?b>/g, "*").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+async function waSend(token: string, target: string, text: string) {
+  const fd = new FormData(); fd.append("target", target); fd.append("message", toWa(text));
+  try { const r = await fetch("https://api.fonnte.com/send", { method: "POST", headers: { Authorization: token }, body: fd }); const j = await r.json(); return { ok: !!j.status, detail: j.reason || j.detail || "" }; }
+  catch (e) { return { ok: false, detail: String(e) }; }
+}
 async function broadcast(text: string) {
-  const cfg = await getSecret("tg"); const chats = (await getSecret("tg_chats")) || [];
-  if (!cfg?.token || !chats.length) return 0;
   let n = 0;
-  for (const c of chats) { const r = await tg(cfg.token, "sendMessage", { chat_id: c.id, text, parse_mode: "HTML", disable_web_page_preview: true }); if (r.ok) n++; }
+  const cfg = await getSecret("tg"); const chats = (await getSecret("tg_chats")) || [];
+  if (cfg?.token) for (const c of chats) { const r = await tg(cfg.token, "sendMessage", { chat_id: c.id, text, parse_mode: "HTML", disable_web_page_preview: true }); if (r.ok) n++; }
+  const wa = await getSecret("wa");
+  if (wa?.token) for (const t of wa.targets || []) { const r = await waSend(wa.token, t, text); if (r.ok) n++; }
   return n;
 }
 
@@ -122,7 +131,6 @@ Deno.serve(async (req) => {
       const text = await compose(kind);
       return json({ ok: true, sent: text ? await broadcast(text) : 0 });
     }
-    // app calls: Owner/Manager only
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     const { data: who } = await admin.auth.getUser(token);
     if (!who?.user) return fail("Sesi habis. Masuk lagi.", 401);
@@ -133,7 +141,8 @@ Deno.serve(async (req) => {
     const cfg = await getSecret("tg");
     if (action === "status") {
       const chats = (await getSecret("tg_chats")) || [];
-      return json({ bot: cfg?.bot || "", hasToken: !!cfg?.token, chats: chats.map((c: Doc) => ({ id: c.id, name: c.name })) });
+      const wa = await getSecret("wa");
+      return json({ bot: cfg?.bot || "", hasToken: !!cfg?.token, chats: chats.map((c: Doc) => ({ id: c.id, name: c.name })), wa: { hasToken: !!wa?.token, targets: wa?.targets || [] } });
     }
     if (action === "setToken") {
       const tk = String(body.token || "").trim();
@@ -142,6 +151,27 @@ Deno.serve(async (req) => {
       if (!r.ok) return fail("Token ditolak Telegram. Cek lagi.");
       await setSecret("tg", { token: tk, bot: r.result.username });
       return json({ ok: true, bot: r.result.username });
+    }
+    if (action === "waSet") {
+      const prev = (await getSecret("wa")) || {};
+      const token = String(body.token || "").trim() || prev.token;
+      if (!token) return fail("Isi token Fonnte.");
+      const targets = String(body.targets ?? (prev.targets || []).join(",")).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean)
+        .map((x) => /@g\.us$/.test(x) ? x : x.replace(/\D/g, "").replace(/^0/, "62")).filter((x) => x.length >= 9);
+      await setSecret("wa", { token, targets });
+      return json({ ok: true, targets });
+    }
+    if (action === "waTest") {
+      const wa = await getSecret("wa"); if (!wa?.token || !(wa.targets || []).length) return fail("Isi token dan nomor penerima dulu.");
+      const res = []; for (const t of wa.targets) res.push({ t, ...(await waSend(wa.token, t, "✅ <b>ROUNA OS</b> terhubung. Notifikasi Coffee Rouna akan dikirim ke sini.")) });
+      const bad = res.filter((r) => !r.ok);
+      return bad.length ? fail("Gagal ke " + bad.map((r) => r.t + (r.detail ? " (" + r.detail + ")" : "")).join(", ")) : json({ ok: true, sent: res.length });
+    }
+    if (action === "waOff") { await admin.from("secrets").delete().eq("key", "wa"); return json({ ok: true }); }
+    if (action === "send") {
+      const kind = String(body.kind || "morning");
+      const text = await compose(kind) || (kind === "closing" ? "✅ Closing hari ini sudah lengkap." : "✅ Tidak ada yang perlu ditindaklanjuti saat ini.");
+      return json({ ok: true, sent: await broadcast(text), text });
     }
     if (!cfg?.token) return fail("Hubungkan bot Telegram dulu.");
     if (action === "link") {
@@ -166,11 +196,6 @@ Deno.serve(async (req) => {
       const chats: Doc[] = (await getSecret("tg_chats")) || [];
       await setSecret("tg_chats", chats.filter((c) => String(c.id) !== String(body.chatId)));
       return json({ ok: true });
-    }
-    if (action === "send") {
-      const kind = String(body.kind || "morning");
-      const text = await compose(kind) || (kind === "closing" ? "✅ Closing hari ini sudah lengkap." : "✅ Tidak ada yang perlu ditindaklanjuti saat ini.");
-      return json({ ok: true, sent: await broadcast(text), text });
     }
     return fail("Aksi tidak dikenal.");
   } catch (e) {
