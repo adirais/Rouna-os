@@ -200,6 +200,19 @@ svg text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
 .bnav .badge{position:absolute;top:4px;left:calc(50% + 6px);margin:0}
 @media (min-width:900px){.more{display:none}}
 .who .chip.acc{background:var(--hi);color:var(--hi-ink)}
+
+/* less text */
+body:not(.hints) main .panel > p.small.muted, body:not(.hints) .hint{display:none}
+.hintbtn{width:30px;height:30px;padding:0;border-radius:50%;border:1px solid var(--line)!important;font-weight:700}
+.hintbtn[aria-pressed="true"]{background:var(--hi);border-color:var(--hi)!important;color:var(--hi-ink)}
+.qa{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.qa-b{display:grid;justify-items:center;gap:8px;padding:16px 8px 14px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-weight:600;font-size:.84rem;color:var(--ink);cursor:pointer}
+.qa-b svg{width:26px;height:26px;color:var(--accent)}
+.qa-b:hover{border-color:var(--brand);background:var(--accent-soft)}
+@media (max-width:560px){.qa{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.guide-mini{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px 18px;border:1px dashed var(--line);border-radius:var(--r);background:var(--surface);cursor:pointer;color:var(--ink);text-align:left;font:inherit}
+.guide-mini > span:first-child{flex:1;min-width:0}
+@media (max-width:560px){.who .chip{display:none}}
 </style>
 </head>
 <body>
@@ -267,7 +280,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -500,11 +513,20 @@ function render() {
     <nav class="side" aria-label="Menu"><div class="brand">${WM}<span class="os">OS</span></div>${allowed.map(n => navBtn(n, "side")).join("")}</nav>
     <div style="min-width:0">
       <header class="top"><div class="brand">${WM}<span class="os">OS</span></div><div class="ctx small muted">${esc(S.settings.outlet || "Coffee Rouna")} · ${fdate(today())}</div>
-        <div class="who"><span class="chip acc">${ROLES[realRole()]}</span><b>${esc(me().name)}</b><button class="btn sm ghost" data-act="logout">Keluar</button></div></header>
+        <div class="who"><button class="btn sm ghost hintbtn" data-act="hints" aria-pressed="${!!S.hints}" title="Tampilkan petunjuk">?</button><span class="chip acc">${ROLES[realRole()]}</span><b>${esc(me().name)}</b><button class="btn sm ghost" data-act="logout">Keluar</button></div></header>
       <main>${V()}</main>
     </div>
     <nav class="bnav" aria-label="Menu">${mobileNav(allowed, navBtn)}</nav>${S.ui.more ? `<div class="more" data-act="moreBg"><div class="sheet" role="dialog" aria-label="Menu lain">${allowed.slice(allowed.length > 5 ? 4 : 5).map(n => navBtn(n)).join("")}</div></div>` : ""}</div>`;
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+}
+const QA_ICON = {
+  out: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/>',
+  in: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 17v3h16v-3"/>',
+  waste: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'
+};
+function qa(act, k, icon, label) {
+  const svg = QA_ICON[icon] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QA_ICON[icon]}</svg>` : ico(icon);
+  return `<button class="qa-b" data-act="${act}" ${k ? `data-k="${k}"` : ""}>${svg}<span>${label}</span></button>`;
 }
 function mobileNav(allowed, navBtn) {
   if (allowed.length <= 5) return allowed.map(n => navBtn(n)).join("");
@@ -641,13 +663,14 @@ function guideData() {
 }
 function viewGuide() {
   const g = guideData(); if (!g) return "";
-  const key = "runa_guide_" + S.me, min = lsGet(key) === "min";
-  if (min) return `<div class="alert acc"><div class="grow"><b>Panduan ${ROLES[realRole()]}</b> <span class="small">· langkah kerja peranmu di ROUNA OS</span></div><button class="btn sm" data-act="guideToggle">Buka panduan</button></div>`;
+  const key = "runa_guide_" + S.me, min = lsGet(key) !== "open";
+  const dn = g.setup ? g.setup.filter(s => s.done === true).length : 0;
+  if (min) return `<button class="guide-mini" data-act="guideToggle"><span><b>Panduan ${ROLES[realRole()]}</b>${g.setup ? `<span class="small muted"> · persiapan ${dn}/${g.setup.length}</span>` : ""}</span>${g.setup ? `<span class="bar" style="width:90px"><i style="width:${dn / g.setup.length * 100}%"></i></span>` : ""}<span class="small" style="color:var(--accent);font-weight:600">Buka</span></button>`;
   const row = (s, i) => { const st = s.done === true ? '<span class="chip ok">Selesai</span>' : typeof s.done === "string" ? `<span class="chip acc">${esc(s.done)}</span>` : s.done === false ? '<span class="chip">Belum</span>' : "";
-    return `<div class="li" style="align-items:flex-start"><span class="num muted" style="width:20px;padding-top:1px">${i + 1}</span><div class="grow"><b>${s.t}</b> ${st}<span class="sub small muted">${s.d}</span></div>${s.b}</div>`; };
+    return `<div class="li" style="align-items:flex-start"><span class="num muted" style="width:20px;padding-top:1px">${i + 1}</span><div class="grow"><b>${s.t}</b> ${st}<span class="sub small muted hint">${s.d}</span></div>${s.b}</div>`; };
   const done = g.setup ? g.setup.filter(s => s.done === true).length : 0;
   return `<section class="panel" style="border-color:var(--accent)"><div class="panel-h"><div><div class="eyebrow">Panduan · ${ROLES[realRole()]}</div><h2>Cara kerja kamu di ROUNA OS</h2></div><button class="btn sm ghost" data-act="guideToggle">Sembunyikan</button></div>
-    <p class="small" style="margin:0">${g.intro}</p>
+    <p class="small hint" style="margin:0">${g.intro}</p>
     ${g.setup ? `<div><div class="panel-h"><div class="eyebrow">Persiapan awal</div><span class="small muted">${done} dari ${g.setup.length} selesai</span></div><div class="bar" style="margin:6px 0 2px"><i style="width:${done / g.setup.length * 100}%"></i></div><div class="list">${g.setup.map(row).join("")}</div></div>` : ""}
     <div><div class="eyebrow">Rutinitas harian</div><div class="list">${g.daily.map(row).join("")}</div></div>
     ${g.monthly ? `<div><div class="eyebrow">Akhir bulan</div><div class="list">${g.monthly.map(row).join("")}</div></div>` : ""}
@@ -681,13 +704,13 @@ function viewHome() {
   if ((r === "manager" || r === "finance") && (!lastSale || lastSale.date < addDays(t, -1))) notes.push(`<div class="alert warn"><div class="grow">Data penjualan Olsera kemarin belum diunggah</div><button class="btn sm" data-act="nav" data-v="sales">Unggah</button></div>`);
   const closeChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
   const quick = [];
-  if (["headbar", "kitchen", "manager"].includes(r)) quick.push(`<button class="btn" data-act="move" data-k="take">Ambil dari gudang</button>`, `<button class="btn" data-act="waste">Catat waste</button>`, `<button class="btn" data-act="closing">Closing sekarang</button>`);
-  if (["gudang", "manager"].includes(r)) quick.push(`<button class="btn" data-act="move" data-k="in">Barang masuk</button>`);
-  quick.push(`<button class="btn" data-act="newOrder">Ajukan order</button>`, `<button class="btn" data-act="absenNow">Absen</button>`);
+  if (["headbar", "kitchen", "manager"].includes(r)) quick.push(qa("move", "take", "out", "Ambil stok"), qa("waste", "", "waste", "Waste"), qa("closing", "", "closing", "Closing"));
+  if (["gudang", "manager"].includes(r)) quick.push(qa("move", "in", "in", "Barang masuk"));
+  quick.push(qa("newOrder", "", "order", "Order"), qa("absenNow", "", "absen", "Absen"));
   const recent = S.moves.slice(0, 2).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 6);
-  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div><div class="row">${quick.join("")}</div></div>
+  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
+  <div class="qa">${quick.join("")}</div>
   ${briefPanel()}
-  ${viewGuide()}
   <div class="grid3">
     <div class="kpi"><span class="eyebrow">Bahan menipis</span><span class="v" style="color:${low.length ? "var(--crit)" : "inherit"}">${low.length}</span></div>
     <div class="kpi"><span class="eyebrow">Order berjalan</span><span class="v">${waitApprove.length + waitRecv.length}</span></div>
@@ -703,7 +726,8 @@ function viewHome() {
       <div class="li"><span>Checklist SOP</span><span class="row">${(() => { const sd = S.sops.find(s => s.date === t); return Object.keys(SOP_DEF).map(k => sd?.runs?.[k] ? `<span class="chip ok">${SOP_DEF[k][0]}</span>` : "").join("") || '<span class="chip">Belum ada</span>'; })()}</span></div>
       <div><div class="eyebrow" style="margin:6px 0">Mutasi stok terbaru</div>${recent.length ? `<div class="list">${recent.map(moveRow).join("")}</div>` : `<div class="small muted">Belum ada mutasi.</div>`}</div>
     </section>
-  </div>`;
+  </div>
+  ${viewGuide()}`;
 }
 function myAttChip() {
   const a = S.attendance.find(x => x.date === today())?.rec?.[S.me];
@@ -802,7 +826,7 @@ function viewOrders() {
   const act = S.orders.filter(o => ["diajukan", "disetujui", "dipesan"].includes(o.status));
   const done = S.orders.filter(o => ["diterima", "ditolak", "dibatalkan"].includes(o.status)).slice(0, 40);
   const list = tab === "aktif" ? act : done;
-  return `<div class="pagehead"><div><div class="eyebrow">Headbar mengajukan · Manager memesan · Gudang menerima</div><h1>Order bahan</h1></div>
+  return `<div class="pagehead"><div><div class="eyebrow">Bahan dari supplier</div><h1>Order bahan</h1></div>
     <div class="row">${lowItems().length ? `<button class="btn" data-act="orderLow">Isi dari stok menipis (${lowItems().length})</button>` : ""}<button class="btn pri" data-act="newOrder">Ajukan order</button></div></div>
   <div class="seg"><button data-act="ui" data-k="ordTab" data-v="aktif" aria-pressed="${tab === "aktif"}">Berjalan (${act.length})</button><button data-act="ui" data-k="ordTab" data-v="selesai" aria-pressed="${tab !== "aktif"}">Selesai</button></div>
   ${list.length ? list.map(orderCard).join("") : `<div class="empty">${tab === "aktif" ? "Tidak ada order berjalan. Ajukan order baru saat bahan mulai menipis." : "Belum ada order selesai."}</div>`}`;
@@ -1614,7 +1638,7 @@ function viewFinance() {
   }
   const tab = S.ui.finTab, mo = S.ui.finMonth, months = finMonths();
   const add = tab === "kas" ? `<button class="btn pri" data-act="cashNew">Input kas shift</button>` : tab === "gaji" ? `<button class="btn pri" data-act="payEdit">Isi total gaji</button>` : tab === "harga" ? "" : `<button class="btn pri" data-act="expense">Catat pengeluaran</button>`;
-  const head = `<div class="pagehead"><div><div class="eyebrow">Format laporan keuangan Coffee Rouna</div><h1>Keuangan</h1></div>
+  const head = `<div class="pagehead"><div><div class="eyebrow">Laporan bulanan</div><h1>Keuangan</h1></div>
     <div class="row">${tab !== "harga" ? `<select id="fin-month" data-ui="finMonth" style="width:auto" aria-label="Bulan">${months.map(m => `<option value="${m}" ${m === mo ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>` : ""}${add}</div></div>
     <div class="seg">${[["pl", "Laba-rugi"], ["kas", "Kas harian"], ["biaya", "Pengeluaran"], ["gaji", "Gaji"], ["harga", "Harga bahan"]].map(([k, l]) => `<button data-act="ui" data-k="finTab" data-v="${k}" aria-pressed="${tab === k}">${l}${k === "harga" && priceAlerts().length ? `<span class="badge">${priceAlerts().length}</span>` : ""}</button>`).join("")}</div>`;
   if (tab === "biaya") return head + viewExpenses(mo);
@@ -2370,6 +2394,7 @@ const ACT = {
   pick: b => { S.authUser = b.dataset.id; renderAuth(); setTimeout(() => $(S.authUser ? "#login-pin" : "#login-user")?.focus(), 30); },
   logout: async () => { S.session = null; try { S.db?.close(); await SB.auth.signOut(); } catch (e) {} location.reload(); },
   more: () => { S.ui.more = !S.ui.more; render(); },
+  hints: () => { S.hints = !S.hints; lsSet("rouna_hints", S.hints ? "1" : null); document.body.classList.toggle("hints", S.hints); render(); toast(S.hints ? "Petunjuk ditampilkan." : "Petunjuk disembunyikan."); },
   moreBg: (b, e) => { if (e.target === b) { S.ui.more = false; render(); } },
   backup: () => backupAll(),
   restore: () => $("#restore-file")?.click(),
@@ -2412,7 +2437,7 @@ const ACT = {
   fcSet: () => modalFc(),
   menuCsv: () => exportMenu(),
   goSet: b => { S.ui.setTab = b.dataset.v; S.view = "setting"; lsSet("runa_view", "setting"); window.scrollTo(0, 0); render(); },
-  guideToggle: () => { const k = "runa_guide_" + S.me; lsSet(k, lsGet(k) === "min" ? null : "min"); render(); },
+  guideToggle: () => { const k = "runa_guide_" + S.me; lsSet(k, lsGet(k) === "open" ? "min" : "open"); render(); }, guideToggleOld: () => { const k = "runa_guide_" + S.me; lsSet(k, lsGet(k) === "min" ? null : "min"); render(); },
   voucherVoid: b => { const v = S.vouchers.find(x => x.rec?.[b.dataset.id]); if (!v) return; const r = v.rec[b.dataset.id];
     confirmBox("Batalkan catatan voucher?", `${S.staff[r.staffId]?.name || "Staf"} · ${rp(r.amt)} · ${fdate(r.date)}. Saldo dikembalikan; catatan tetap tersimpan sebagai dibatalkan.`, "Batalkan", async () => { await guard(() => S.db.doc("voucher/" + v.month).update({rec: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}})); }); },
   item: b => S.items[b.dataset.id]?.prep ? modalPrep(b.dataset.id) : modalItem(b.dataset.id),
@@ -2496,6 +2521,7 @@ const SUBMIT = {
 };
 document.addEventListener("submit", e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (fn) fn(f); });
 
+document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
