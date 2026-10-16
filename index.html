@@ -295,10 +295,10 @@ function toast(msg) { const t = $("#toast"); t.innerHTML = '<div class="toast" r
 const ROLES = {owner: "Owner", manager: "Manager", finance: "Finance", headbar: "Headbar", kitchen: "Kitchen", gudang: "Gudang", crew: "Crew"};
 const AREAS = {bar: "Bar", kitchen: "Kitchen"};
 const NAV = [
-  ["home", "Beranda", ["manager", "finance", "headbar", "gudang", "kitchen"]],
+  ["home", "Beranda", ["manager", "finance", "headbar", "gudang", "kitchen", "crew"]],
   ["stok", "Stok", ["manager", "finance", "headbar", "gudang", "kitchen"]],
   ["order", "Order", ["manager", "finance", "headbar", "gudang", "kitchen"]],
-  ["closing", "Closing", ["manager", "headbar", "kitchen"]],
+  ["closing", "Closing", ["manager", "headbar", "kitchen", "crew"]],
   ["menu", "Menu", ["manager", "finance", "headbar", "kitchen", "crew"]],
   ["sales", "Penjualan", ["manager", "finance", "headbar"]],
   ["analitik", "Analitik", ["manager", "finance"]],
@@ -693,8 +693,11 @@ function guideData() {
         {t: "Ajukan order bila stok di bawah minimum", d: "Notifikasi stok menipis muncul di Beranda dan menu Stok.", done: lowItems().length === 0, b: B("Ajukan order", "newOrder")},
         {t: "Opname gudang seminggu sekali", d: "Hitung fisik semua bahan gudang. Sistem mencatat selisihnya.", done: null, b: B("Opname", "move", 'data-k="opname"')}],
       tips: ["Jangan menambah stok tanpa nota atau catatan. Setiap mutasi menyimpan siapa yang mencatat.", "Barang yang diambil bar atau kitchen dicatat oleh mereka lewat Ambil dari gudang."]},
-    crew: {intro: "Tugasmu di ROUNA OS sederhana: absen setiap shift dan pantau saldo voucher.",
+    crew: {intro: "Tugasmu di ROUNA OS: absen tiap shift, catat barang yang diambil dari gudang, catat waste, dan bantu closing.",
       daily: [absen,
+        {t: "Ambil barang dari gudang", d: "Setiap mengambil bahan dari gudang ke bar/kitchen, catat di Ambil barang. Stok gudang dan area langsung berubah.", done: null, b: B("Ambil barang", "move", 'data-k="take"')},
+        {t: "Catat waste", d: "Bahan tumpah, basi, salah buat, atau komplain: catat jumlah dan alasannya, foto bila ada.", done: null, b: B("Waste", "waste")},
+        {t: "Closing sebelum pulang", d: "Hitung sisa fisik tiap bahan di area, isi spoil dan alasannya. Jangan menyalin angka sistem tanpa menghitung.", done: !!(cl?.shifts?.bar || cl?.shifts?.kitchen), b: B("Closing", "nav", 'data-v="closing"')},
         {t: "Checklist area & toilet", d: "Opening dan closing area/server sesuai SOP. Toilet dicek tiap 30 menit.", done: !!S.sops.find(s => s.date === t)?.runs?.["floor-close"], b: B("Checklist", "nav", 'data-v="sop"')},
         {t: "Baca Buku SOP", d: "SOP General, Bar, Kitchen, Server, dan aturan SDM. Tandai sudah dibaca.", done: S.docs.filter(docOk).every(docAck) && S.docs.length > 0, b: B("Buku SOP", "goDocs")},
         {t: "Pakai voucher karyawan", d: "Jatah voucher berlaku per bulan, bebas untuk menu apa saja. Saat memakai, minta Headbar mencatatnya atas namamu.", done: null, b: ""}],
@@ -722,6 +725,7 @@ function viewGuide() {
 /* ---------- HOME ---------- */
 function viewHome() {
   const r = role(), t = today();
+  if (r === "crew") return crewHome();
   const low = lowItems();
   const cl = S.closings.find(c => c.date === t);
   const att = S.attendance.find(a => a.date === t);
@@ -3175,6 +3179,24 @@ function olsCompleteness() {
     <div class="row" style="gap:8px">${list.map(x => `<span class="chip ${x.daily && x.sku ? "ok" : x.daily || x.sku ? "warn" : "crit"}" title="Keseluruhan ${x.daily ? "ada" : "belum"} · SKU ${x.sku ? "ada" : "belum"}">${fdate(x.d).replace(/^\w+, /, "")} · ${x.daily && x.sku ? "2/2" : x.daily ? "SKU kurang" : x.sku ? "Keseluruhan kurang" : "0/2"}</span>`).join("")}</div></section>`;
 }
 
+/* ===== Beranda Crew: ambil barang, waste, closing, absen (tanpa angka penjualan) ===== */
+function crewHome() {
+  const t = today(), cl = S.closings.find(c => c.date === t), sd = S.sops.find(s => s.date === t);
+  const cChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
+  const mineMoves = S.moves.filter(m => m.date === t).flatMap(m => Object.values(m.list || {})).filter(e => e.by === S.me).sort((a, b) => b.ts - a.ts).slice(0, 6);
+  const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length;
+  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
+  <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}</div>
+  ${ur ? `<div class="alert acc"><div class="grow"><b>${ur} SOP</b> belum kamu baca</div><button class="btn sm" data-act="goDocs">Baca</button></div>` : ""}
+  <section class="panel"><div class="panel-h"><h2>Hari ini</h2></div>
+    <div class="li"><span>Absensi kamu</span><span>${myAttChip()}</span></div>
+    <div class="li"><span>Closing</span><span class="row">${cChips}</span></div>
+    <div class="li"><span>Checklist SOP</span><span class="row">${Object.keys(SOP_DEF).map(k => sd?.runs?.[k] ? `<span class="chip ok">${SOP_DEF[k][0]}</span>` : "").join("") || '<span class="chip">Belum ada</span>'}</span></div>
+    <div><div class="eyebrow" style="margin:6px 0">Catatanmu hari ini</div>${mineMoves.length ? `<div class="list">${mineMoves.map(moveRow).join("")}</div>` : `<div class="small muted">Belum ada ambil barang atau waste.</div>`}</div>
+  </section>
+  ${viewGuide()}`;
+}
+
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
 
 /* ===== Kas & Bank ===== */
@@ -3518,7 +3540,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016131907";
+const BUILD = "20261016142737";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
