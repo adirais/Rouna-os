@@ -1717,6 +1717,7 @@ function viewPnl(mo) {
     <div class="kpi"><span class="eyebrow">Total beban operasional</span><span class="v">${rpk(P.beban)}</span><span class="small muted">${pc(P.beban)} pendapatan</span></div>
     <div class="kpi"><span class="eyebrow">Laba sebelum saving</span><span class="v">${rpk(P.laba)}</span><span class="small muted">margin ${pc(P.laba)}</span></div>
     <div class="kpi"><span class="eyebrow">Net profit nyata</span><span class="v" style="color:${P.net < 0 ? "var(--crit)" : "var(--ok)"}">${rpk(P.net)}</span><span class="small muted">setelah saving ${rpk(P.saving)}</span></div></div>
+  ${fnbDashboard(P)}
   ${primeCard(P)}
   ${deprCard(P)}
   ${au.length ? `<section class="panel"><h2>Temuan pemeriksaan</h2><div style="display:grid;gap:8px">${au.map(([c, t, d]) => `<div class="alert ${c}"><div class="grow"><b>${t}</b><div class="small">${d}</div></div></div>`).join("")}</div></section>` : ""}
@@ -3285,6 +3286,63 @@ async function dlPhoto(url, name) {
 }
 document.addEventListener("change", e => { if (e.target.dataset?.docpic) onDocPic(e.target); });
 
+/* ===== Dashboard laba rugi standar F&B: kelompok biaya, diagram bulat, acuan sehat ===== */
+const FNB = [
+  {k: "hpp", n: "HPP (bahan & produk vendor)", c: "#739EC9", cats: ["Bahan Baku Bar", "Bahan Baku Kitchen", "RnD", "Vendor Cake&Pastry", "Vendor Donat", "Galon", "Cup", "Mad Patty"], lo: 25, hi: 35, max: 38,
+    tip: "Cek harga beli, porsi resep, dan waste. Naikkan harga menu yang food cost-nya di atas target."},
+  {k: "labor", n: "Tenaga kerja", c: "#2F4A66", lo: 25, hi: 30, max: 33, tip: "Sesuaikan jadwal shift dengan jam ramai; kurangi lembur dan part time di jam sepi."},
+  {k: "sewa", n: "Sewa & saving", c: "#C9A227", cats: ["Saving"], lo: 6, hi: 10, max: 12, tip: "Biaya tetap: turunkan persentasenya dengan menaikkan omzet, bukan memotong biaya."},
+  {k: "util", n: "Utility (listrik, internet, gas, air)", c: "#E08A5B", cats: ["Listrik", "Internet", "Utilitas", "Gas"], lo: 3, hi: 5, max: 7, tip: "Cek peralatan yang menyala di luar jam operasional, suhu AC, dan kulkas yang bocor."},
+  {k: "ops", n: "Operasional & marketing", c: "#8FB39A", cats: ["Internal", "Inventori", "Maintanance & Repair", "Marketing", "Admin Bank", "Refund Customer"], lo: 8, hi: 15, max: 18, tip: "Pisahkan inventori (aset) dari biaya rutin; ukur hasil tiap pengeluaran marketing."},
+  {k: "lain", n: "Pajak & invoice bulan lalu", c: "#A99BCB", cats: ["Pajak", "Utang Invoice Bulan Sebelumnya"], tip: "Bukan biaya bulan ini secara operasional; invoice bulan lalu sebaiknya dicatat di bulan barangnya diterima."}
+];
+function fnbBuckets(P) {
+  const r = P.rev || 0, used = new Set(), out = FNB.map(b => {
+    let v = 0;
+    if (b.k === "labor") v = P.labor; else (b.cats || []).forEach(c => { v += P.byCat[c] || 0; used.add(c); });
+    return {...b, v, p: r ? v / r * 100 : 0};
+  });
+  // kategori lain yang belum terpetakan masuk Operasional
+  Object.entries(P.byCat).forEach(([c, v]) => { if (!used.has(c) && !["Petty Cash"].includes(c) && groupOf(c) !== "Gaji Karyawan") { const o = out.find(x => x.k === "ops"); o.v += v; o.p = r ? o.v / r * 100 : 0; } });
+  const cost = out.reduce((s, x) => s + x.v, 0), laba = r - cost;
+  return {list: out, cost, laba, lp: r ? laba / r * 100 : 0, gross: r ? (r - out[0].v) / r * 100 : 0, prime: r ? (out[0].v + out[1].v) / r * 100 : 0};
+}
+const fnbState = (p, lo, hi, max) => hi == null ? ["", "Info"] : p <= hi ? ["ok", "Sehat"] : p <= max ? ["warn", "Waspada"] : ["crit", "Terlalu tinggi"];
+function donutSvg(parts, total, center, sub) {
+  const R = 70, C = 2 * Math.PI * R; let off = 0;
+  const segs = parts.filter(x => x.v > 0).map(x => { const len = total ? x.v / total * C : 0, s = `<circle r="${R}" cx="90" cy="90" fill="none" stroke="${x.c}" stroke-width="30" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 90 90)"><title>${esc(x.n)}: ${pct(total ? x.v / total : 0)}</title></circle>`; off += len; return s; }).join("");
+  return `<svg viewBox="0 0 180 180" width="200" height="200" role="img" aria-label="Diagram komposisi pendapatan" style="max-width:100%;flex:none"><circle r="${R}" cx="90" cy="90" fill="none" stroke="var(--line)" stroke-width="30"/>${segs}<text x="90" y="86" text-anchor="middle" style="font:700 17px var(--font,inherit);fill:var(--ink)">${center}</text><text x="90" y="104" text-anchor="middle" style="font:500 10px var(--font,inherit);fill:var(--muted)">${sub}</text></svg>`;
+}
+function fnbDashboard(P) {
+  if (!P.rev) return `<section class="panel"><h2>Kesehatan bisnis F&B</h2><div class="empty">Belum ada pendapatan bulan ini. Isi Kas shift atau unggah laporan Olsera.</div></section>`;
+  const B = fnbBuckets(P), r = P.rev, profit = {k: "laba", n: "Laba bersih", c: "#3E9E6A", v: Math.max(0, B.laba), p: B.lp};
+  const parts = [...B.list, profit], total = B.laba >= 0 ? r : B.cost;
+  const labaSt = B.lp >= 15 ? ["ok", "Sangat sehat"] : B.lp >= 10 ? ["ok", "Sehat"] : B.lp >= 5 ? ["warn", "Tipis"] : ["crit", B.lp < 0 ? "Rugi" : "Kurang"];
+  const grossSt = B.gross >= 65 ? ["ok", "Sehat"] : B.gross >= 60 ? ["warn", "Waspada"] : ["crit", "Rendah"];
+  const primeSt = B.prime <= 60 ? ["ok", "Sehat"] : B.prime <= 65 ? ["warn", "Waspada"] : ["crit", "Terlalu tinggi"];
+  const rows = B.list.map(b => { const st = fnbState(b.p, b.lo, b.hi, b.max); return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.c};margin-right:8px"></span>${esc(b.n)}</td><td class="r num">${rp(b.v)}</td><td class="r num"><b>${b.p.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">${b.hi != null ? b.lo + "–" + b.hi + "%" : "-"}</td><td>${st[0] ? `<span class="chip ${st[0]}">${st[1]}</span>` : `<span class="chip">${st[1]}</span>`}</td></tr>`; }).join("");
+  const insights = [];
+  B.list.forEach(b => { if (b.hi == null || !b.v) return; const st = fnbState(b.p, b.lo, b.hi, b.max); if (st[0] !== "ok") insights.push([st[0], `${b.n} ${b.p.toFixed(1).replace(".", ",")}% (acuan ${b.lo}–${b.hi}%)`, `Kelebihan ± ${rp((b.p - b.hi) / 100 * r)} bulan ini. ${b.tip}`]); });
+  if (B.prime > 60) insights.push([primeSt[0], `Prime cost ${B.prime.toFixed(1).replace(".", ",")}% (acuan ≤60%)`, "HPP + tenaga kerja adalah biaya terbesar yang bisa dikendalikan. Di atas 65% hampir pasti menekan laba."]);
+  if (B.lp < 10) insights.push([labaSt[0], `Laba bersih ${B.lp.toFixed(1).replace(".", ",")}% (sehat ≥10%)`, B.lp < 0 ? "Bulan ini rugi. Mulai dari pos dengan status Terlalu tinggi di tabel." : "Target kafe yang dikelola baik 10–20% dari omzet."]);
+  if (!insights.length) insights.push(["ok", "Semua pos dalam batas sehat", `Laba bersih ${B.lp.toFixed(1).replace(".", ",")}% dari omzet. Pertahankan disiplin pencatatan dan closing harian.`]);
+  return `<section class="panel"><div class="panel-h"><h2>Kesehatan bisnis F&B · ${monthLabel(P.mo)}</h2><span class="chip ${labaSt[0]}">Laba ${labaSt[1]}</span></div>
+    <div class="row" style="gap:20px;align-items:center;flex-wrap:wrap">
+      ${donutSvg(parts, total, (B.lp).toFixed(1).replace(".", ",") + "%", "laba bersih")}
+      <div style="display:grid;gap:6px;flex:1 1 240px;min-width:0">${parts.map(x => `<div class="row small" style="gap:8px;flex-wrap:nowrap"><span style="width:12px;height:12px;border-radius:3px;background:${x.c};flex:none"></span><span class="grow">${esc(x.n)}</span><b class="num">${(x.k === "laba" ? B.lp : x.p).toFixed(1).replace(".", ",")}%</b></div>`).join("")}
+        <div class="small muted">Persentase dari omzet ${rp(r)}. ${B.laba < 0 ? "Bulan ini rugi, jadi diagram menunjukkan komposisi biaya." : ""}</div></div>
+      <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));flex:1 1 300px;min-width:0">
+        <div class="kpi"><span class="eyebrow">Gross margin</span><span class="v">${B.gross.toFixed(1).replace(".", ",")}%</span><span class="chip ${grossSt[0]}" style="justify-self:start">${grossSt[1]}</span><span class="small muted">acuan ≥65%</span></div>
+        <div class="kpi"><span class="eyebrow">Prime cost</span><span class="v">${B.prime.toFixed(1).replace(".", ",")}%</span><span class="chip ${primeSt[0]}" style="justify-self:start">${primeSt[1]}</span><span class="small muted">acuan ≤60%</span></div>
+        <div class="kpi"><span class="eyebrow">Laba bersih</span><span class="v" style="color:${B.laba < 0 ? "var(--crit)" : "inherit"}">${rpk(B.laba)}</span><span class="chip ${labaSt[0]}" style="justify-self:start">${labaSt[1]}</span><span class="small muted">${B.lp.toFixed(1).replace(".", ",")}% · acuan ≥10%</span></div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Kelompok biaya (standar F&B)</th><th class="r">Rupiah</th><th class="r">% omzet</th><th class="r">Acuan sehat</th><th>Status</th></tr></thead><tbody>${rows}
+      <tr class="tot"><td><b>Laba bersih (setelah sewa & saving)</b></td><td class="r num"><b>${rp(B.laba)}</b></td><td class="r num"><b>${B.lp.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">≥10%</td><td><span class="chip ${labaSt[0]}">${labaSt[1]}</span></td></tr></tbody></table></div>
+    <div style="display:grid;gap:8px">${insights.map(([c, t, d]) => `<div class="alert ${c}"><div class="grow"><b>${t}</b><div class="small">${d}</div></div></div>`).join("")}</div>
+    <p class="small muted" style="margin:0">Acuan umum industri kafe/restoran: HPP 25–35%, tenaga kerja 25–30%, prime cost ≤60%, sewa 6–10%, utility 3–5%, operasional 8–15%, laba bersih ≥10%. Laporan berbasis kas: biaya dihitung saat dibayar. Petty cash tidak dihitung karena hanya perpindahan kas.</p>
+  </section>`;
+}
+
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
 
 /* ===== Kas & Bank ===== */
@@ -3628,7 +3686,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016151917";
+const BUILD = "20261016152934";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
