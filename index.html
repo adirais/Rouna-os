@@ -2614,7 +2614,7 @@ async function copyWeek() {
 /* rekap absensi satu staf dalam sebulan, sesuai SOP: toleransi 5 menit/shift, akumulasi bulanan */
 function attStats(mo, sid) {
   const last = mo === today().slice(0, 7) ? today() : mo + "-" + pad(daysInMonth(mo)), tol = tolTelat();
-  const g = {jadwal: 0, hadir: 0, alpha: 0, sakitTS: 0, izin: 0, cuti: 0, sakit: 0, libur: 0, tanpaJadwal: 0, jam: 0, telat: 0, telatMin: 0, telatHitung: 0, pulangCepat: 0, lupaOut: 0, days: []};
+  const g = {jadwal: 0, masuk: 0, hadir: 0, alpha: 0, sakitTS: 0, izin: 0, cuti: 0, sakit: 0, libur: 0, tanpaJadwal: 0, jam: 0, telat: 0, telatMin: 0, telatHitung: 0, pulangCepat: 0, lupaOut: 0, days: []};
   for (let d = 1; d <= daysInMonth(mo); d++) {
     const ds = mo + "-" + pad(d); if (ds > last) break;
     const k = planOf(ds)[sid] || "", rec = S.attendance.find(a => a.date === ds)?.rec?.[sid], def = shiftDef(k);
@@ -2629,7 +2629,7 @@ function attStats(mo, sid) {
     } else if (!rec?.in) {
       if (ds === today()) { row.status = "Belum absen"; } else { g.jadwal++; g.alpha++; row.status = "Alpha"; }
     } else {
-      g.jadwal++;
+      g.jadwal++; g.masuk++;
       const st = new Date(ds + "T" + def.s + ":00").getTime(); let en = new Date(ds + "T" + def.e + ":00").getTime(); if (en <= st) en += 864e5;
       row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4)); g.telatMin += row.late; if (row.late > tol) g.telat++;
       if (rec.out) { row.early = Math.max(0, Math.round((en - rec.out.ts) / 6e4)); if (row.early > 0) g.pulangCepat += row.early; }
@@ -2637,7 +2637,7 @@ function attStats(mo, sid) {
     }
     g.days.push(row);
   }
-  g.telatHitung = Math.max(0, g.telatMin - tol * g.jadwal);
+  g.tolBulan = tol * g.masuk; g.telatHitung = Math.max(0, g.telatMin - g.tolBulan);
   g.sp = g.telatHitung > 450 || g.alpha >= 3 ? ["SP3", "crit"] : g.alpha >= 2 ? ["SP2", "crit"] : g.telatHitung > 350 ? ["SP1 tertulis", "crit"] : g.telatHitung > 100 ? ["Teguran lisan", "warn"] : ["Aman", "ok"];
   return g;
 }
@@ -2660,13 +2660,13 @@ function viewPayPeople(mo) {
   const tot = k => rows.reduce((s, r) => s + r[k], 0);
   const noSal = rows.filter(r => !r.pk).length;
   return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm" data-act="payPdf">Unduh rekap PDF</button><button class="btn sm" data-act="slipPdf">Unduh slip per orang</button><button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
-    <p class="small muted" style="margin:0">Dihitung dari Jadwal shift dan absensi selfie sesuai SOP: toleransi ${tolTelat()} menit per shift, keterlambatan diakumulasi sebulan (menit dihitung = total telat − ${tolTelat()} × jumlah shift). Alpha dan sakit tanpa surat dipotong per hari; telat dipotong per menit dihitung. Klik nama untuk rincian harian.</p>
+    <p class="small muted" style="margin:0">Dihitung dari Jadwal shift dan absensi selfie sesuai SOP: toleransi ${tolTelat()} menit per shift, telat diakumulasi sebulan: toleransi = ${tolTelat()} menit × jumlah shift yang masuk; yang dipotong hanya kelebihannya × ${rp(potMenitDefault())}/menit. Alpha dan sakit tanpa surat dipotong per hari; telat dipotong per menit dihitung. Klik nama untuk rincian harian.</p>
     ${noSal ? `<div class="alert warn"><div class="grow small"><b>${noSal} staf</b> belum punya gaji pokok. Klik nama → Atur gaji.</div></div>` : ""}
     <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Hadir/shift</th><th class="r">Jam kerja</th><th class="r">Telat</th><th class="r">Alpha / sakit TS</th><th>Status SOP</th><th class="r">Pokok</th><th class="r">Potongan</th><th class="r">Kasbon</th><th class="r">Bonus</th><th class="r">Bersih</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td><button class="linkbtn" data-act="payDetail" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
       <td class="r num">${r.a.hadir}/${r.a.jadwal}${r.a.izin + r.a.cuti + r.a.sakit ? `<span class="sub">izin/cuti/sakit ${r.a.izin + r.a.cuti + r.a.sakit}</span>` : ""}</td>
       <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}</td>
-      <td class="r num">${r.a.telatMin ? `${r.a.telat}× · ${r.a.telatMin} mnt<span class="sub">dihitung ${r.a.telatHitung} mnt</span>` : "0"}</td>
+      <td class="r num">${r.a.telatMin ? `${r.a.telatMin} mnt<span class="sub">toleransi ${r.a.tolBulan} · dipotong ${r.a.telatHitung}</span>` : "0"}</td>
       <td class="r num">${r.a.alpha + r.a.sakitTS ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}</span>` : "0"}</td>
       <td><span class="chip ${r.a.sp[1]}">${r.a.sp[0]}</span></td>
       <td class="r num">${r.pk ? rp(r.pk) : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA + r.potT)}${r.potA && r.potT ? `<span class="sub">absen ${rpk(r.potA)} · telat ${rpk(r.potT)}</span>` : ""}</td>
@@ -2682,13 +2682,13 @@ function modalPayDetail(id) {
   const a = r.a;
   openModal(`<div class="modal wide" role="dialog" aria-label="Rincian absensi"><div class="modal-h"><div><div class="eyebrow">${monthLabel(mo)} · ${ROLES[r.role]}</div><h2>${esc(r.name)}</h2></div><div class="row"><button class="btn sm" data-act="salEdit" data-id="${id}">Atur gaji</button><button class="btn sm" data-act="slipPdf" data-id="${id}">Unduh slip PDF</button><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
     <div class="grid3"><div class="kpi"><span class="eyebrow">Hadir / shift</span><span class="v">${a.hadir}/${a.jadwal}</span><span class="small muted">jam kerja ${fjam(a.jam)}</span></div>
-      <div class="kpi"><span class="eyebrow">Telat</span><span class="v">${a.telatMin} mnt</span><span class="small muted">${a.telat}× · dihitung ${a.telatHitung} mnt</span></div>
+      <div class="kpi"><span class="eyebrow">Telat</span><span class="v">${a.telatMin} mnt</span><span class="small muted">toleransi ${a.tolBulan} mnt (${a.masuk} shift × ${tolTelat()}) · dipotong ${a.telatHitung} mnt</span></div>
       <div class="kpi"><span class="eyebrow">Alpha · sakit tanpa surat</span><span class="v">${a.alpha} · ${a.sakitTS}</span><span class="small muted">izin ${a.izin} · cuti ${a.cuti} · sakit ${a.sakit}</span></div>
       <div class="kpi"><span class="eyebrow">Status SOP</span><span class="v"><span class="chip ${a.sp[1]}">${a.sp[0]}</span></span><span class="small muted">pulang cepat ${a.pulangCepat} mnt</span></div></div>
     <div class="list">
       <div class="li"><span class="grow">Gaji pokok</span><span class="num">${rp(r.pk)}</span></div>
       <div class="li"><span class="grow">(−) Alpha & sakit tanpa surat<span class="sub small muted">${a.alpha + a.sakitTS} hari × ${rp(r.pa)}</span></span><span class="num">${rp(r.potA)}</span></div>
-      <div class="li"><span class="grow">(−) Keterlambatan<span class="sub small muted">${a.telatHitung} menit × ${rp(r.pm)}</span></span><span class="num">${rp(r.potT)}</span></div>
+      <div class="li"><span class="grow">(−) Keterlambatan<span class="sub small muted">(${a.telatMin} − toleransi ${a.tolBulan}) = ${a.telatHitung} menit × ${rp(r.pm)}</span></span><span class="num">${rp(r.potT)}</span></div>
       <div class="li"><span class="grow">(−) Kasbon</span><span class="num">${rp(r.kas)}</span></div>
       <div class="li"><span class="grow">(+) Bonus</span><span class="num">${rp(r.bon)}</span></div>
       <div class="li"><span class="grow"><b>Gaji bersih</b></span><span class="num"><b>${rp(r.net)}</b></span></div></div>
@@ -2739,14 +2739,14 @@ function pdfHead(doc, title, sub) {
 async function payPdf() {
   try { toast("Menyiapkan PDF…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
   const mo = S.ui.finMonth, rows = payRows(mo), {jsPDF} = window.jspdf, doc = new jsPDF({orientation: "landscape", unit: "mm", format: "a4"});
-  pdfHead(doc, "Rekap Absensi & Gaji · " + monthLabel(mo), `Sesuai SOP: toleransi ${tolTelat()} menit/shift, telat diakumulasi bulanan. Potongan telat ${pdfRp(potMenitDefault())}/menit (kecuali diatur per orang). Alpha & sakit tanpa surat dipotong per hari.`);
+  pdfHead(doc, "Rekap Absensi & Gaji · " + monthLabel(mo), `Sesuai SOP: toleransi ${tolTelat()} menit × jumlah shift masuk per bulan; hanya kelebihan telat yang dipotong ${pdfRp(potMenitDefault())}/menit. Alpha & sakit tanpa surat dipotong per hari.`);
   const sum = f => rows.reduce((s, r) => s + f(r), 0);
-  doc.autoTable({startY: 41, styles: {fontSize: 7.5, cellPadding: 1.6}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
-    head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Telat dihitung", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok", "Pot. absen", "Pot. telat", "Kasbon", "Bonus", "Gaji bersih"]],
-    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.bon), pdfRp(r.net)]),
-    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.net))]],
+  doc.autoTable({startY: 41, styles: {fontSize: 6.8, cellPadding: 1.4}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
+    head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok", "Pot. absen", "Pot. telat", "Kasbon", "Bonus", "Gaji bersih"]],
+    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.tolBulan + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.bon), pdfRp(r.net)]),
+    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", "", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.net))]],
     footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold"},
-    columnStyles: {2: {halign: "right"}, 3: {halign: "right"}, 4: {halign: "right"}, 5: {halign: "right"}, 6: {halign: "right"}, 7: {halign: "right"}, 8: {halign: "right"}, 9: {halign: "right"}, 11: {halign: "right"}, 12: {halign: "right"}, 13: {halign: "right"}, 14: {halign: "right"}, 15: {halign: "right"}, 16: {halign: "right", fontStyle: "bold"}}});
+    columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17].map(c => [c, c === 17 ? {halign: "right", fontStyle: "bold"} : {halign: "right"}]))});
   let y = doc.lastAutoTable.finalY + 8; const P = pnl(mo);
   doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text("Ke laporan keuangan", 12, y); doc.setFont("helvetica", "normal");
   doc.text(`Beban gaji bersih ${monthLabel(mo)}: ${pdfRp(sum(r => r.net))}${P.rev ? ` · ${((sum(r => r.net)) / P.rev * 100).toFixed(1).replace(".", ",")}% dari pendapatan ${pdfRp(P.rev)}` : ""}`, 12, y + 5);
@@ -2763,12 +2763,12 @@ async function slipPdf(onlyId) {
     const a = r.a;
     pdfHead(doc, "Slip Gaji & Rekap Absensi", `${r.name} · ${ROLES[r.role]} · ${monthLabel(mo)}`);
     doc.autoTable({startY: 41, theme: "plain", styles: {fontSize: 9, cellPadding: 1.4}, columnStyles: {1: {halign: "right"}},
-      body: [["Gaji pokok", pdfRp(r.pk)], [`(−) Alpha & sakit tanpa surat (${a.alpha + a.sakitTS} hari × ${pdfRp(r.pa)})`, pdfRp(r.potA)], [`(−) Keterlambatan (${a.telatHitung} menit dihitung × ${pdfRp(r.pm)})`, pdfRp(r.potT)], ["(−) Kasbon", pdfRp(r.kas)], ["(+) Bonus", pdfRp(r.bon)]],
+      body: [["Gaji pokok", pdfRp(r.pk)], [`(−) Alpha & sakit tanpa surat (${a.alpha + a.sakitTS} hari × ${pdfRp(r.pa)})`, pdfRp(r.potA)], [`(−) Keterlambatan: total ${a.telatMin} mnt − toleransi ${a.tolBulan} mnt (${a.masuk} shift × ${tolTelat()}) = ${a.telatHitung} mnt × ${pdfRp(r.pm)}`, pdfRp(r.potT)], ["(−) Kasbon", pdfRp(r.kas)], ["(+) Bonus", pdfRp(r.bon)]],
       foot: [["GAJI BERSIH", pdfRp(r.net)]], footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold", halign: "right"}});
     const y = doc.lastAutoTable.finalY + 5;
     doc.autoTable({startY: y, styles: {fontSize: 8.5, cellPadding: 1.4}, headStyles: {fillColor: [115, 158, 201], textColor: 255},
-      head: [["Shift dijadwalkan", "Hadir", "Jam kerja", "Telat", "Telat dihitung", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Lupa check-out", "Status SOP"]],
-      body: [[a.jadwal, a.hadir, fjam(a.jam), `${a.telat}x · ${a.telatMin} mnt`, a.telatHitung + " mnt", a.alpha, a.sakitTS, a.izin + a.cuti + a.sakit, a.lupaOut, a.sp[0]]]});
+      head: [["Shift dijadwalkan", "Hadir", "Jam kerja", "Telat", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Lupa check-out", "Status SOP"]],
+      body: [[a.jadwal, a.hadir, fjam(a.jam), `${a.telat}x · ${a.telatMin} mnt`, a.tolBulan + " mnt", a.telatHitung + " mnt", a.alpha, a.sakitTS, a.izin + a.cuti + a.sakit, a.lupaOut, a.sp[0]]]});
     doc.autoTable({startY: doc.lastAutoTable.finalY + 5, styles: {fontSize: 7.5, cellPadding: 1.2}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
       head: [["Tanggal", "Jadwal", "Masuk", "Pulang", "Jam kerja", "Telat", "Keterangan"]],
       body: a.days.map(d => [fdate(d.date), d.k ? d.k + (d.label ? " · " + d.label : "") : "-", d.in ? ftime(d.in) : "-", d.out ? ftime(d.out) : "-", d.jam ? fjam(d.jam) : "-", d.late ? d.late + " mnt" : "-", d.status])});
@@ -3258,7 +3258,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016114347";
+const BUILD = "20261016115407";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
