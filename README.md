@@ -2,7 +2,7 @@
 
 Aplikasi operasional internal Coffee Rouna: stok, order bahan, closing, menu & COGS, penjualan, analitik, keuangan, SOP, dan absensi.
 
-**Alamat:** https://adirais.github.io/Rouna-os/
+**Alamat:** https://rouna.coffee (cadangan: https://adirais.github.io/Rouna-os/)
 
 Staf masuk dengan **username + PIN 6 angka**. Data tersimpan di Supabase (proyek `rouna-os`, Singapura) dan dijaga per peran langsung di database.
 
