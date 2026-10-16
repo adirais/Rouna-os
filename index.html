@@ -622,7 +622,7 @@ function guideData() {
   const r = realRole(), t = today(), cl = S.closings.find(c => c.date === t), mine = S.attendance.find(a => a.date === t)?.rec?.[S.me];
   const B = (label, act, attrs) => `<button class="btn sm" data-act="${act}" ${attrs || ""}>${label}</button>`;
   const absen = {t: "Check-in saat datang, check-out saat pulang", d: "Selfie di area outlet. Jam tercatat otomatis.", done: !!(mine?.in && mine?.out) ? true : mine?.in ? "Sudah check-in" : false, b: B("Absen", "absenNow")};
-  const salesDone = S.daily.some(d => d.date >= addDays(t, -1)) || S.sales.some(s => s.date >= addDays(t, -1));
+  const salesDone = S.daily.some(d => d.date >= addDays(t, -1)) && S.sales.some(s => s.date >= addDays(t, -1));
   const opnameDone = S.moves.some(m => Object.values(m.list || {}).some(x => x.t === "opname"));
   const items = itemsArr(), staffN = Object.values(S.staff).filter(s => s.active !== false).length;
   const setupList = [
@@ -644,7 +644,7 @@ function guideData() {
       tips: ["Owner punya akses penuh seperti Manager, termasuk menyetujui order dan mengubah pengaturan. Biarkan Manager yang menjalankannya supaya sistem tidak bergantung padamu.", "Ubah target food cost dan nominal voucher karyawan di Pengaturan → Umum."]},
     finance: {intro: "Kamu memastikan uang dan angka cocok: penjualan, kas, pembelian bahan, gaji, dan voucher karyawan.",
       daily: [absen,
-        {t: "Unggah dan cocokkan laporan Olsera", d: "Unggah PDF Laporan Keseluruhan Penjualan kemarin. Cocokkan total QRIS dan tunai dengan mutasi rekening dan uang di laci.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')},
+        {t: "Unggah dan cocokkan laporan Olsera", d: "Unggah 2 PDF kemarin: Laporan Keseluruhan Penjualan + Penjualan berdasarkan SKU. Cocokkan total QRIS dan tunai dengan mutasi rekening dan uang di laci.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')},
         {t: "Cek kas tunai dan selisih shift", d: "Selisih kas di laporan Olsera harus nol. Tanyakan ke kasir bila ada selisih atau void tunai.", done: null, b: B("Penjualan", "nav", 'data-v="sales"')},
         {t: "Cocokkan order yang diterima dengan nota", d: "Order berstatus Diterima menyimpan jumlah aktual dan harga nota. Pastikan sesuai tagihan supplier sebelum dibayar.", done: null, b: B("Order", "nav", 'data-v="order"')},
         {t: "Pantau voucher karyawan", d: "Compliment di Olsera harus sama dengan voucher yang dicatat per karyawan.", done: null, b: B("Voucher", "nav", 'data-v="absen"')},
@@ -659,7 +659,7 @@ function guideData() {
     manager: {intro: "Kamu memegang kendali penuh: menyiapkan data, menyetujui order, dan membaca angka. Selesaikan persiapan awal sekali, lalu jalankan rutinitas harian.",
       setup: setupList,
       daily: [
-        {t: "Unggah laporan Olsera kemarin", d: "PDF Laporan Keseluruhan Penjualan, dan export penjualan per produk bila ada.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')},
+        {t: "Unggah laporan Olsera kemarin", d: "2 PDF wajib: Laporan Keseluruhan Penjualan dan Penjualan berdasarkan SKU.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')},
         {t: "Setujui dan pesan order bahan", d: "Cek pengajuan dari tim, setujui, lalu tandai sudah dipesan dengan supplier dan perkiraan tiba.", done: !S.orders.some(o => o.status === "diajukan" || o.status === "disetujui"), b: B("Order", "nav", 'data-v="order"')},
         {t: "Cek closing bar dan kitchen", d: "Lihat spoil dan selisih pemakaian. Tanyakan ke tim bila ada yang janggal.", done: !!(cl?.shifts?.bar && cl?.shifts?.kitchen), b: B("Closing", "nav", 'data-v="closing"')},
         {t: "Pantau voucher karyawan", d: "Pastikan compliment di Olsera sudah dicatat atas nama karyawan.", done: null, b: B("Voucher", "nav", 'data-v="absen"')},
@@ -675,7 +675,7 @@ function guideData() {
         {t: "Produksi batch bahan olahan", d: "Saat membuat simple syrup, cold brew, dll., catat lewat Produksi batch supaya stok bahan mentah berkurang otomatis.", done: null, b: B("Produksi batch", "prod")},
         {t: "Checklist closing bar", d: "Backflush, bersihkan steam wand, simpan bahan berlabel.", done: !!S.sops.find(s => s.date === t)?.runs?.["bar-close"], b: B("Closing bar SOP", "sop", 'data-k="bar-close"')},
         {t: "Closing bar sebelum pulang", d: "Hitung sisa fisik tiap bahan bar, isi spoil beserta alasannya. Jangan menyalin angka sistem tanpa menghitung.", done: !!cl?.shifts?.bar, b: B("Closing bar", "closing", 'data-a="bar"')},
-        {t: "Unggah laporan Olsera", d: "Bila Manager berhalangan, unggah PDF laporan penjualan hari sebelumnya.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')}],
+        {t: "Unggah laporan Olsera", d: "Bila Manager berhalangan, unggah 2 PDF Olsera hari sebelumnya (Keseluruhan + SKU).", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')}],
       tips: ["Barang yang dikembalikan ke gudang dicatat lewat Retur, bukan dibiarkan.", "Spoil yang jujur lebih berguna daripada angka yang rapi. Dari situ kita tahu bahan mana yang terbuang."]},
     kitchen: {intro: "Kamu penanggung jawab kitchen: bahan kitchen cukup, spoil tercatat, dan closing kitchen selesai setiap hari.",
       daily: [absen,
@@ -1003,10 +1003,11 @@ function viewSales() {
   const day = S.ui.salesDay ? S.sales.find(s => s.date === S.ui.salesDay) : null;
   const recDate = S.ui.recDate || S.closings.find(c => S.sales.some(s => s.date === c.date))?.date || "";
   return `<div class="pagehead"><div><div class="eyebrow">Unggah laporan harian dari Olsera</div><h1>Penjualan</h1></div>
-    <div class="row"><label class="btn pri" for="olsera-file" style="cursor:pointer">Unggah file Olsera</label><input id="olsera-file" type="file" accept=".csv,.xlsx,.xls,.pdf" hidden></div></div>
-  <div class="alert acc"><div class="grow small"><b>Dua jenis laporan Olsera bisa diunggah.</b> PDF <i>Laporan Keseluruhan Penjualan</i> untuk ringkasan harian (pendapatan, grup produk, diskon, batal, HPP, pembayaran). PDF <i>Penjualan berdasarkan SKU</i> (atau export per produk Excel/CSV) untuk qty semua produk, HPP versi ROUNA, analisis produk, dan pencocokan stok.</div></div>
+    <div class="row"><label class="btn pri" for="olsera-file" style="cursor:pointer">Unggah 2 laporan Olsera</label><input id="olsera-file" type="file" accept=".csv,.xlsx,.xls,.pdf" multiple hidden></div></div>
+  <div class="alert acc"><div class="grow small"><b>Tiap hari unggah 2 PDF Olsera untuk tanggal kemarin</b> — pilih keduanya sekaligus: <b>1.</b> <i>Laporan Keseluruhan Penjualan</i> (pendapatan, CASH/QRIS, diskon, batal, HPP Olsera) dan <b>2.</b> <i>Penjualan berdasarkan SKU</i> (qty & harga modal semua produk → HPP ROUNA, analitik, cocok stok).</div></div>
+  ${olsCompleteness()}
   ${dailyPanel()}
-  ${!S.sales.length ? `<div class="empty"><b>Belum ada data penjualan per produk</b><span>Export laporan penjualan per produk dari Olsera (CSV atau Excel), lalu unggah di sini. Kolom nama produk, jumlah terjual, dan total penjualan akan dikenali otomatis.</span></div>` : ""}
+  ${!S.sales.length ? `<div class="empty"><b>Belum ada data penjualan per produk</b><span>Unggah PDF <i>Penjualan berdasarkan SKU</i> dari Olsera (atau export per produk CSV/Excel). Qty, total, dan harga modal tiap produk dikenali otomatis.</span></div>` : ""}
   <div class="grid2">
   <section class="panel"><h2>Data tersimpan</h2>${S.sales.length ? `<div class="list">${S.sales.slice(0, 30).map(s => `<div class="li"><div class="grow"><b>${fdate(s.date)}</b><span class="sub small muted">${(s.rows || []).length} produk · ${fq(s.qty)} terjual</span></div><span class="num">${rpk(s.total)}</span><button class="btn sm" data-act="ui" data-k="salesDay" data-v="${S.ui.salesDay === s.date ? "" : s.date}">${S.ui.salesDay === s.date ? "Tutup" : "Detail"}</button></div>`).join("")}</div>` : `<div class="small muted">-</div>`}</section>
   <section class="panel"><div class="panel-h"><h2>Cocokkan stok vs penjualan</h2><select id="rec-date" data-ui="recDate" style="width:auto" aria-label="Tanggal">${S.sales.map(s => `<option value="${s.date}" ${recDate === s.date ? "selected" : ""}>${fdate(s.date)}</option>`).join("")}</select></div>
@@ -2998,7 +2999,7 @@ const ACT2 = {
   tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
 };
 const SUBMIT2 = {
-  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(),
+  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(),
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
@@ -3097,6 +3098,71 @@ function recipeOf(name) {
   if (RCP_IDX.k !== S.recipes) { RCP_IDX.k = S.recipes; RCP_IDX.m = {}; Object.entries(S.recipes).forEach(([id, rc]) => [id, rc.product, rc.cogsName].forEach(n => { if (n) RCP_IDX.m[norm(n).replace(/[^a-z0-9]/g, "")] ||= rc; })); }
   const c = s => norm(s).replace(/[^a-z0-9]/g, "");
   return RCP_IDX.m[c(name)] || (/\//.test(name) ? RCP_IDX.m[c(name.split("/")[0])] : null) || null;
+}
+
+/* ===== Unggah 2 laporan Olsera per hari: Keseluruhan Penjualan + Penjualan berdasarkan SKU ===== */
+let PAIR = null;
+async function pdfItems(file) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false}).promise;
+  const items = [];
+  for (let p = 1; p <= pdf.numPages; p++) { const tc = await (await pdf.getPage(p)).getTextContent(); tc.items.forEach(it => { if (it.str && it.str.trim()) items.push({str: it.str, x: it.transform[4], y: -it.transform[5], w: it.width, page: p}); }); }
+  return items;
+}
+async function onOlseraFiles(files) {
+  const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || f.type === "application/pdf"), other = files.filter(f => !pdfs.includes(f));
+  if (!pdfs.length) return other[0] && onOlseraFile(other[0]);
+  toast("Membaca " + pdfs.length + " PDF…");
+  const P = {daily: null, sku: null, bad: []};
+  for (const f of pdfs) {
+    try {
+      const items = await pdfItems(f), K = parseOlseraSku(items);
+      if (K && K.rows.length) { P.sku = {...K, file: f.name}; continue; }
+      const Rs = parseOlseraSummary(items);
+      if (Rs.start && (Rs.categories.length || Rs.pl.revenue != null)) P.daily = {...Rs, file: f.name}; else P.bad.push(f.name);
+    } catch (e) { console.error(e); P.bad.push(f.name); }
+  }
+  if (!P.daily && !P.sku) return toast(P.bad.length ? "PDF tidak dikenali. Unggah Laporan Keseluruhan Penjualan dan Penjualan berdasarkan SKU dari Olsera." : "PDF tidak terbaca.");
+  P.date = (P.daily || P.sku).start; PAIR = P; modalPair();
+}
+function olsStatus(date) { return {daily: S.daily.some(d => d.date === date), sku: S.sales.some(s => s.date === date)}; }
+function modalPair() {
+  const P = PAIR, D = P.daily, K = P.sku, date = P.date, had = olsStatus(date);
+  const multi = (D && D.start !== D.end) || (K && K.start !== K.end), clash = D && K && D.start !== K.start;
+  const card = (title, sub, ok, body, missTxt, hadIt) => `<div class="kpi" style="gap:6px"><span class="eyebrow">${title}</span>${ok ? `<span class="chip ok" style="justify-self:start">Siap disimpan</span>${body}` : hadIt ? `<span class="chip ok" style="justify-self:start">Sudah tersimpan sebelumnya</span>` : `<span class="chip warn" style="justify-self:start">Belum diunggah</span><span class="small muted">${missTxt}</span>`}<span class="small muted">${sub}</span></div>`;
+  const tq = K ? K.rows.reduce((s, r) => s + r.qty, 0) : 0;
+  const after = {daily: !!D || had.daily, sku: !!K || had.sku};
+  openModal(`<form data-submit="pair" class="modal wide" role="dialog" aria-label="Laporan Olsera"><div class="modal-h"><h2>Laporan Olsera · ${fdate(date)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${multi ? `<div class="alert crit"><div class="grow">Laporan harus untuk <b>satu tanggal</b>. Pilih tanggal yang sama di awal dan akhir saat export dari Olsera.</div></div>` : ""}
+    ${clash ? `<div class="alert crit"><div class="grow">Tanggal kedua laporan berbeda: Keseluruhan ${fdate(D.start)}, SKU ${fdate(K.start)}. Unggah pasangan untuk tanggal yang sama.</div></div>` : ""}
+    <div class="grid2">
+      ${card("1 · Keseluruhan Penjualan", "Pendapatan, CASH/QRIS, diskon, loyalti, batal, HPP Olsera", D, D ? `<span class="v">${rpk(D.pl.revenue)}</span><span class="small muted">HPP Olsera ${pct(D.pl.revenue ? D.pl.hpp / D.pl.revenue : 0)} · ${esc(D.file)}</span>` : "", "Export PDF Laporan Keseluruhan Penjualan tanggal ini.", had.daily)}
+      ${card("2 · Penjualan berdasarkan SKU", "Qty & harga modal semua produk → HPP ROUNA, analitik, cocok stok", K, K ? `<span class="v">${K.rows.length} produk</span><span class="small muted">${fq(tq)} terjual · ${esc(K.file)}</span>` : "", "Export PDF Penjualan berdasarkan SKU tanggal ini.", had.sku)}</div>
+    ${D && K && D.catQty && tq && Math.abs(D.catQty - tq) > 0 ? `<div class="alert warn"><div class="grow small">Jumlah item berbeda: Keseluruhan ${fq(D.catQty)}, SKU ${fq(tq)}. Pastikan keduanya dari tanggal dan outlet yang sama.</div></div>` : ""}
+    ${P.bad.length ? `<div class="alert warn"><div class="grow small">Tidak dikenali: ${P.bad.map(esc).join(", ")}</div></div>` : ""}
+    ${!(after.daily && after.sku) ? `<div class="alert warn"><div class="grow small"><b>Laporan ${fdate(date)} belum lengkap.</b> Tiap hari wajib 2 PDF. Bisa disimpan sekarang, lalu unggah yang kurang nanti. Tips: pilih kedua PDF sekaligus saat unggah.</div></div>` : `<div class="alert acc"><div class="grow small">Lengkap: kedua laporan ${fdate(date)} tersedia.</div></div>`}
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" ${multi || clash ? "disabled" : ""}>Simpan ${D && K ? "2 laporan" : "laporan"}</button></div></form>`);
+}
+async function submitPair() {
+  const P = PAIR; if (!P) return;
+  const h0 = olsStatus(P.date), st = {daily: h0.daily || !!P.daily, sku: h0.sku || !!P.sku};
+  const ok = await guard(async () => {
+    if (P.daily) { DAILY = P.daily; const R = DAILY; await S.db.doc("daily/" + R.start).set({date: R.start, outletName: R.outletName, pl: R.pl, channels: R.channels, discounts: R.discounts, discountTotal: R.discountTotal, loyalty: R.loyalty, cancelled: R.cancelled, categories: R.categories, catTotal: R.catTotal, catQty: R.catQty, top: R.top, payments: R.payments, cash: R.cash, file: R.file, uploadedAt: Date.now(), by: S.me}); DAILY = null; }
+    if (P.sku) { const R = P.sku, rows = R.rows.map(r => ({name: r.name, cat: r.cat, qty: r.qty, rev: r.rev, modal: r.modal, ...(r.variant ? {variant: r.variant} : {})}));
+      await S.db.doc("sales/" + R.start).set({date: R.start, rows, total: rows.reduce((s, r) => s + r.rev, 0), qty: rows.reduce((s, r) => s + r.qty, 0), modal: rows.reduce((s, r) => s + r.modal, 0), src: "olsera-sku", file: R.file, uploadedAt: Date.now(), by: S.me}); }
+  });
+  if (!ok) return;
+  closeModal(); S.ui.dailyDay = P.date; S.ui.salesDay = P.sku ? P.date : S.ui.salesDay; PAIR = null;
+  toast(st.daily && st.sku ? `Laporan ${fdate(P.date)} lengkap.` : `Tersimpan. Masih kurang: ${st.daily ? "Penjualan berdasarkan SKU" : "Keseluruhan Penjualan"}.`);
+}
+function olsCompleteness() {
+  const days = []; for (let i = 1; i <= 7; i++) days.push(addDays(today(), -i));
+  const first = [...S.daily, ...S.sales].map(x => x.date).sort()[0];
+  const list = days.filter(d => !first || d >= first).map(d => ({d, ...olsStatus(d)}));
+  if (!list.length) return "";
+  const miss = list.filter(x => !x.daily || !x.sku).length;
+  return `<section class="panel"><div class="panel-h"><h2>Kelengkapan laporan 7 hari</h2>${miss ? `<span class="chip warn">${miss} hari belum lengkap</span>` : `<span class="chip ok">Lengkap</span>`}</div>
+    <div class="row" style="gap:8px">${list.map(x => `<span class="chip ${x.daily && x.sku ? "ok" : x.daily || x.sku ? "warn" : "crit"}" title="Keseluruhan ${x.daily ? "ada" : "belum"} · SKU ${x.sku ? "ada" : "belum"}">${fdate(x.d).replace(/^\w+, /, "")} · ${x.daily && x.sku ? "2/2" : x.daily ? "SKU kurang" : x.sku ? "Keseluruhan kurang" : "0/2"}</span>`).join("")}</div></section>`;
 }
 
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
@@ -3376,7 +3442,7 @@ document.addEventListener("click", e => { const b = e.target.closest("[data-act]
 document.addEventListener("change", e => {
   const t = e.target;
   if (t.id === "mv-price") return fixInLines();
-  if (t.id === "olsera-file" && t.files[0]) { onOlseraFile(t.files[0]); t.value = ""; return; }
+  if (t.id === "olsera-file" && t.files[0]) { onOlseraFiles([...t.files]); t.value = ""; return; }
   if (t.id === "selfie" && t.files[0]) return onSelfie(t.files[0]);
   if (t.id === "sop-photo" && t.files[0]) return onSopPhoto(t.files[0]);
   if (t.id === "ws-photo" && t.files[0]) return onSopPhoto(t.files[0], "ws-prev");
@@ -3442,7 +3508,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016124016";
+const BUILD = "20261016131201";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
