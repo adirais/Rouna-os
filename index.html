@@ -551,7 +551,7 @@ function render() {
         <div class="who"><button class="btn sm ghost hintbtn" data-act="hints" aria-pressed="${!!S.hints}" title="Tampilkan petunjuk">?</button><span class="chip acc">${ROLES[realRole()]}</span><b>${esc(me().name)}</b><button class="btn sm ghost" data-act="logout">Keluar</button></div></header>
       <main>${V()}</main>
     </div>
-    <nav class="bnav" aria-label="Menu">${mobileNav(allowed, navBtn)}</nav>${S.ui.more ? `<div class="more" data-act="moreBg"><div class="sheet" role="dialog" aria-label="Menu lain">${allowed.slice(allowed.length > 5 ? 4 : 5).map(n => navBtn(n)).join("")}</div></div>` : ""}</div>`;
+    <nav class="bnav" aria-label="Menu">${mobileNav(allowed, navBtn)}</nav>${S.ui.more ? `<div class="more" data-act="moreBg"><div class="sheet" role="dialog" aria-label="Menu lain">${navOrder(allowed).slice(allowed.length > 5 ? 4 : 5).map(n => navBtn(n)).join("")}</div></div>` : ""}</div>`;
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
 }
 const QA_ICON = {
@@ -563,7 +563,10 @@ function qa(act, k, icon, label) {
   const svg = QA_ICON[icon] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QA_ICON[icon]}</svg>` : ico(icon);
   return `<button class="qa-b" data-act="${act}" ${k ? `data-k="${k}"` : ""}>${svg}<span>${label}</span></button>`;
 }
+const NAV_PRI = ["home", "stok", "sales", "closing"];
+function navOrder(allowed) { const pri = NAV_PRI.map(k => allowed.find(n => n[0] === k)).filter(Boolean); return [...pri, ...allowed.filter(n => !pri.includes(n))]; }
 function mobileNav(allowed, navBtn) {
+  allowed = navOrder(allowed);
   if (allowed.length <= 5) return allowed.map(n => navBtn(n)).join("");
   const rest = allowed.slice(4), inRest = rest.some(n => n[0] === S.view);
   const badge = rest.some(n => (n[0] === "sop" && S.docs.some(d => docOk(d) && !docAck(d))) || (n[0] === "stok" && lowItems().length));
@@ -3046,7 +3049,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016105753";
+const BUILD = "20261016110952";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
