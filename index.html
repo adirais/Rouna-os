@@ -2134,7 +2134,7 @@ function viewMenu() {
   if (tab === "menu" && S.ui.menuId && S.recipes[S.ui.menuId]) return viewMenuDetail(S.ui.menuId);
   const rows = menuRows(), priced = rows.filter(m => m.fc != null);
   const head = `<div class="pagehead"><div><div class="eyebrow">${rows.length} menu · ${prepItems().length} bahan olahan · ${itemsArr().filter(i => !i.prep).length} bahan baku</div><h1>Menu</h1></div>
-    <div class="row">${canCost() ? `<button class="btn" data-act="fcSet">Target food cost</button>${S.dl && rows.length ? `<button class="btn" data-act="menuCsv">Unduh CSV</button>` : ""}` : ""}${isMgr() ? (tab === "menu" ? `<button class="btn pri" data-act="recipe">Tambah menu</button>` : tab === "olahan" ? `<button class="btn pri" data-act="prep">Tambah bahan olahan</button>` : `<button class="btn pri" data-act="item">Tambah bahan</button>`) : ""}</div></div>
+    <div class="row">${canCost() ? `<button class="btn" data-act="fcSet">Target food cost</button>${S.dl && rows.length ? `<button class="btn" data-act="menuCsv">Unduh CSV</button>` : ""}` : ""}${isMgr() ? (tab === "menu" ? `<button class="btn pri" data-act="recipe">Tambah menu</button>` : tab === "olahan" ? `<button class="btn pri" data-act="prep">Tambah bahan olahan</button>` : `<button class="btn pri" data-act="item">Tambah bahan</button>`) : tab === "bahan" && canCost() ? `<button class="btn pri" data-act="item">Tambah bahan</button>` : ""}</div></div>
     <div class="seg">${tabs.map(([k, l]) => `<button data-act="ui" data-k="menuTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>`;
   if (tab === "olahan") return head + viewPreps();
   if (tab === "bahan" && canCost()) return head + viewItemsCost();
@@ -2227,7 +2227,7 @@ function viewItemsCost() {
     <select id="b-cat" data-ui="bcat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${cats.map(c => `<option ${u.bcat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
     ${zero ? `<div class="seg"><button data-act="ui" data-k="bzero" data-v="" aria-pressed="${!u.bzero}">Semua</button><button data-act="ui" data-k="bzero" data-v="1" aria-pressed="${!!u.bzero}">Harga kosong (${zero})</button></div>` : ""}</div></section>
   ${Object.entries(g).sort().map(([k, is]) => `<section class="panel" style="gap:6px"><div class="panel-h"><h2>${esc(k)}</h2><span class="small muted">${is.length} bahan</span></div><div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Harga/satuan</th><th class="r">Harga beli</th><th class="r">30 hari</th><th class="r">Dipakai</th><th></th></tr></thead><tbody>
-    ${is.map(i => { const c = ch[i.id], s = i.src, n = recipesUsing(i.id).length; return `<tr><td><b>${esc(i.name)}</b><span class="sub">per ${esc(i.unit)}${i.supplier ? " · " + esc(i.supplier) : ""}</span></td><td class="r num">${+i.cost > 0 ? rp(i.cost) : '<span class="chip warn">kosong</span>'}</td><td class="r num small">${s && s.harga ? rp(s.harga) + " / " + fq(s.isi) + " " + esc(i.unit) : "-"}</td><td class="r">${c && c.base ? `<span class="chip ${c.chg >= .1 ? "crit" : c.chg > 0 ? "warn" : c.chg < 0 ? "ok" : ""}">${c.chg > 0 ? "+" : ""}${pct(c.chg)}</span>` : '<span class="muted">–</span>'}</td><td class="r small">${n ? n + " menu" : '<span class="muted">–</span>'}</td><td class="r">${isMgr() ? `<button class="btn sm" data-act="item" data-id="${i.id}">Ubah</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div></section>`).join("") || `<div class="empty">Tidak ada bahan yang cocok.</div>`}`;
+    ${is.map(i => { const c = ch[i.id], s = i.src, n = recipesUsing(i.id).length; return `<tr><td><b>${esc(i.name)}</b><span class="sub">per ${esc(i.unit)}${i.supplier ? " · " + esc(i.supplier) : ""}</span></td><td class="r num">${+i.cost > 0 ? rp(i.cost) : '<span class="chip warn">kosong</span>'}</td><td class="r num small">${s && s.harga ? rp(s.harga) + " / " + fq(s.isi) + " " + esc(i.unit) : "-"}</td><td class="r">${c && c.base ? `<span class="chip ${c.chg >= .1 ? "crit" : c.chg > 0 ? "warn" : c.chg < 0 ? "ok" : ""}">${c.chg > 0 ? "+" : ""}${pct(c.chg)}</span>` : '<span class="muted">–</span>'}</td><td class="r small">${n ? n + " menu" : '<span class="muted">–</span>'}</td><td class="r">${canCost() ? `<button class="btn sm" data-act="item" data-id="${i.id}">Ubah</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div></section>`).join("") || `<div class="empty">Tidak ada bahan yang cocok.</div>`}`;
 }
 function modalFc() {
   openModal(`<form data-submit="fcSet" class="modal" role="dialog" aria-label="Target food cost"><div class="modal-h"><h2>Target food cost</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
@@ -3628,7 +3628,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016151629";
+const BUILD = "20261016151917";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
