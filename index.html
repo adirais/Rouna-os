@@ -2274,7 +2274,7 @@ async function submitVoucher(form) {
 function viewAbsen() {
   const t = today(), att = S.attendance.find(a => a.date === t), mine = att?.rec?.[S.me];
   const staff = Object.entries(S.staff).filter(([, s]) => s.active !== false).sort((a, b) => a[1].name.localeCompare(b[1].name));
-  const pic = x => x ? `<img class="thumb" src="${esc(photoSrc(x))}" alt="Foto" loading="lazy">` : "";
+  const pic = x => x ? `<a href="${esc(x.asset ? photoSrc(x) : x.pic || "")}" target="_blank" rel="noopener" title="Lihat foto"><img class="thumb" src="${esc(x.pic || photoSrc(x))}" alt="Foto" loading="lazy"></a>` : "";
   let recap = "";
   if (isMgr() || role() === "finance") {
     const mo = S.ui.absMonth, days = S.attendance.filter(a => a.date.startsWith(mo));
@@ -2292,21 +2292,104 @@ function viewAbsen() {
     ${!mine?.in ? `<p class="small muted" style="margin:0">Ambil selfie di area outlet sebagai bukti kehadiran.</p><div><button class="btn pri" data-act="absenNow">Check-in dengan selfie</button></div>` : !mine.out ? `<div><button class="btn pri" data-act="absenNow">Check-out dengan selfie</button></div>` : `<div class="small muted">Absensi hari ini lengkap. Sampai besok.</div>`}</section>
   ${viewVoucher()}
   ${["manager", "headbar"].includes(role()) ? `<section class="panel"><h2>Kehadiran hari ini</h2><div class="list">${staff.map(([id, s]) => { const r = att?.rec?.[id]; return `<div class="li"><div class="row" style="gap:10px;flex-wrap:nowrap;min-width:0">${pic(r?.in) || '<span class="thumb"></span>'}<div class="grow" style="min-width:0"><b>${esc(s.name)}</b><span class="sub small muted">${ROLES[s.role]}</span></div></div>
-    <span>${r?.in ? `<span class="chip ok">${ftime(r.in.ts)}</span>` : '<span class="chip">Belum</span>'} ${r?.out ? `<span class="chip">${ftime(r.out.ts)}</span>` : ""}</span>${pic(r?.out)}</div>`; }).join("")}</div></section>` : ""}
+    <span>${r?.in ? `<span class="chip ok">${ftime(r.in.ts)}</span> ${geoChip(r.in)}` : '<span class="chip">Belum</span>'} ${r?.out ? `<span class="chip">${ftime(r.out.ts)}</span> ${geoChip(r.out)}` : ""}</span>${pic(r?.out)}</div>`; }).join("")}</div></section>` : ""}
   ${recap}`;
 }
 function modalAbsen() {
   const mine = S.attendance.find(a => a.date === today())?.rec?.[S.me];
   if (mine?.out) return toast("Absensi hari ini sudah lengkap.");
   const kind = mine?.in ? "out" : "in";
+  setTimeout(startGeo, 0);
   openModal(`<form data-submit="absen" data-k="${kind}" class="modal" role="dialog" aria-label="Absensi">
     <div class="modal-h"><h2>${kind === "in" ? "Check-in" : "Check-out"} · ${esc(me().name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
+    <div><span id="geo-status" class="chip">Mengambil lokasi…</span></div>
     <label class="btn" for="selfie" style="justify-self:start;cursor:pointer">Ambil selfie</label>
     <input id="selfie" type="file" accept="image/*" capture="user" hidden>
     <img id="selfie-prev" class="selfie" alt="Pratinjau selfie" hidden>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" id="absen-go" disabled>Simpan ${kind === "in" ? "check-in" : "check-out"}</button></div></form>`);
 }
+
+/* ---------- Absen: lokasi + stamp di foto ---------- */
+let GEO = null;
+const outletGeo = () => S.settings.geo && S.settings.geo.lat ? S.settings.geo : null;
+function distM(a, b) { const R = 6371e3, r = x => x * Math.PI / 180, dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+const fdist = m => m >= 1000 ? (m / 1000).toLocaleString("id-ID", {maximumFractionDigits: 1}) + " km" : Math.round(m) + " m";
+function geoInfo(g) {
+  if (!g || g.err) return {ok: false, txt: g?.err || "Lokasi tidak tersedia"};
+  const o = outletGeo(); if (!o) return {ok: null, txt: "Lokasi outlet belum diatur"};
+  const d = distM(g, o), ok = d <= (+o.radius || 100) + Math.min(+g.acc || 0, 100);
+  return {ok, d, txt: (ok ? "Di outlet · " : "Di luar outlet · ") + fdist(d) + " dari " + (S.settings.outlet || "Coffee Rouna")};
+}
+function startGeo() {
+  GEO = {pending: true};
+  if (!navigator.geolocation) { GEO = {err: "Perangkat tidak mendukung lokasi"}; geoStatus(); return; }
+  navigator.geolocation.getCurrentPosition(p => { GEO = {lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy), ts: Date.now()}; geoStatus(); },
+    e => { GEO = {err: e.code === 1 ? "Izin lokasi ditolak" : "Lokasi tidak didapat"}; geoStatus(); }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 20000});
+  geoStatus();
+}
+function geoStatus() {
+  const el = $("#geo-status"); if (!el) return;
+  if (GEO?.pending) { el.className = "chip"; el.textContent = "Mengambil lokasi…"; return; }
+  const i = geoInfo(GEO); el.className = "chip " + (i.ok ? "ok" : i.ok === false ? "warn" : "");
+  el.textContent = GEO?.err ? GEO.err + " — izinkan lokasi di browser" : i.txt + " (±" + GEO.acc + " m)";
+}
+const waitGeo = ms => new Promise(res => { const t0 = Date.now(); const k = () => (!GEO?.pending || Date.now() - t0 > ms) ? res() : setTimeout(k, 200); k(); });
+function loadTile(lat, lng, z) {
+  const n = 2 ** z, xt = (lng + 180) / 360 * n, lr = lat * Math.PI / 180, yt = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n;
+  const ix = Math.floor(xt), iy = Math.floor(yt);
+  return new Promise(res => { const img = new Image(); img.crossOrigin = "anonymous"; const t = setTimeout(() => res(null), 4000);
+    img.onload = () => { clearTimeout(t); res({img, px: (xt - ix) * 256, py: (yt - iy) * 256}); }; img.onerror = () => { clearTimeout(t); res(null); };
+    img.src = `https://tile.openstreetmap.org/${z}/${ix}/${iy}.png`; });
+}
+async function stampCanvas(c, kind) {
+  const x = c.getContext("2d"), W = c.width, H = c.height, f = Math.max(14, Math.round(W / 26)), pad = Math.round(f * .8);
+  const d = new Date(), i = geoInfo(GEO), lines = [
+    [(kind === "in" ? "CHECK-IN" : "CHECK-OUT") + " · " + ftime(Date.now()) + " WITA", "bold"],
+    [fdate(today()) + " " + d.getFullYear(), ""],
+    [(me()?.name || "") + " · " + (ROLES[realRole()] || ""), ""],
+    [i.txt, i.ok === false ? "warn" : ""],
+    [GEO && !GEO.err && GEO.lat ? GEO.lat.toFixed(6) + ", " + GEO.lng.toFixed(6) + "  ±" + GEO.acc + " m" : "Koordinat tidak tersedia", "small"]];
+  const lh = Math.round(f * 1.38), bh = pad * 2 + lh * lines.length, top = H - bh;
+  const tile = GEO && GEO.lat ? await loadTile(GEO.lat, GEO.lng, 17) : null;
+  const g = x.createLinearGradient(0, top - f * 2, 0, H); g.addColorStop(0, "rgba(30,30,30,0)"); g.addColorStop(.3, "rgba(30,30,30,.78)"); g.addColorStop(1, "rgba(30,30,30,.9)");
+  x.fillStyle = g; x.fillRect(0, top - f * 2, W, bh + f * 2);
+  let tx = pad;
+  if (tile) {
+    const ms = bh - pad * 2, src = 128, sx = Math.max(0, Math.min(256 - src, tile.px - src / 2)), sy = Math.max(0, Math.min(256 - src, tile.py - src / 2));
+    x.save(); x.beginPath(); x.roundRect ? x.roundRect(pad, top + pad, ms, ms, f * .5) : x.rect(pad, top + pad, ms, ms); x.clip();
+    x.drawImage(tile.img, sx, sy, src, src, pad, top + pad, ms, ms); x.restore();
+    const kx = pad + (tile.px - sx) / src * ms, ky = top + pad + (tile.py - sy) / src * ms;
+    x.fillStyle = "#e5483b"; x.beginPath(); x.arc(kx, ky - f * .55, f * .45, 0, Math.PI * 2); x.fill(); x.beginPath(); x.moveTo(kx - f * .38, ky - f * .4); x.lineTo(kx, ky + f * .1); x.lineTo(kx + f * .38, ky - f * .4); x.fill();
+    x.fillStyle = "#fff"; x.beginPath(); x.arc(kx, ky - f * .55, f * .17, 0, Math.PI * 2); x.fill();
+    x.font = "500 " + Math.max(9, Math.round(f * .45)) + "px system-ui, sans-serif"; x.fillStyle = "rgba(30,30,30,.8)"; x.fillText("© OpenStreetMap", pad + f * .3, top + pad + ms - f * .3);
+    tx = pad * 2 + ms;
+  } else { x.fillStyle = "#739ec9"; x.fillRect(pad, top + pad * .9, Math.round(f * .25), lh * lines.length - pad * .2); tx = pad + f * .8; }
+  lines.forEach(([t, st], n) => {
+    x.font = (st === "bold" ? "700 " : "500 ") + (st === "small" ? Math.round(f * .82) : f) + 'px "Wanted Sans Variable", system-ui, sans-serif';
+    x.fillStyle = st === "warn" ? "#fff58a" : st === "small" ? "rgba(255,255,255,.78)" : "#fff";
+    x.fillText(t, tx, top + pad + lh * n + f * .95, W - tx - pad);
+  });
+  x.font = "700 " + Math.round(f * .75) + 'px "Wanted Sans Variable", system-ui, sans-serif'; x.fillStyle = "rgba(255,255,255,.9)"; x.textAlign = "right";
+  x.fillText("ROUNA OS", W - pad, pad + f); x.textAlign = "left";
+}
+function geoChip(r) {
+  if (!r?.geo) return "";
+  const i = r.geo.err ? {ok: false, txt: "tanpa lokasi"} : (() => { const o = outletGeo(); if (!o) return {ok: null}; const d = distM(r.geo, o); return {ok: d <= (+o.radius || 100) + Math.min(+r.geo.acc || 0, 100), txt: fdist(d)}; })();
+  const href = r.geo.lat ? `https://www.google.com/maps?q=${r.geo.lat},${r.geo.lng}` : "";
+  return href ? `<a class="chip ${i.ok ? "ok" : i.ok === false ? "warn" : ""}" href="${href}" target="_blank" rel="noopener" title="Buka di peta">📍 ${i.txt || "peta"}</a>` : `<span class="chip warn">📍 ${i.txt}</span>`;
+}
+async function setOutletGeo(btn) {
+  if (!navigator.geolocation) return toast("Perangkat tidak mendukung lokasi.");
+  btn.disabled = true; btn.textContent = "Mengambil lokasi…";
+  navigator.geolocation.getCurrentPosition(async p => {
+    const radius = num($("#geo-radius")?.value) || 100;
+    if (await guard(() => mergeDoc("settings/app", {geo: {lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), radius, acc: Math.round(p.coords.accuracy), ts: Date.now()}}, {}))) toast("Lokasi outlet tersimpan (akurasi ±" + Math.round(p.coords.accuracy) + " m).");
+    btn.disabled = false; render();
+  }, () => { toast("Lokasi tidak didapat. Izinkan akses lokasi di browser."); btn.disabled = false; render(); }, {enableHighAccuracy: true, timeout: 20000});
+}
+
 let SELFIE = null;
 function shrink(file, size, q) {
   return new Promise((res, rej) => { const img = new Image(); const url = URL.createObjectURL(file);
@@ -2315,7 +2398,10 @@ function shrink(file, size, q) {
 }
 async function onSelfie(file) {
   try {
-    const small = await shrink(file, 160, .6), big = await shrink(file, 720, .75);
+    const small = await shrink(file, 160, .6), big = await shrink(file, 900, .8);
+    const btnGo = $("#absen-go"); if (btnGo) { btnGo.disabled = true; btnGo.textContent = "Menunggu lokasi…"; }
+    await waitGeo(8000); await stampCanvas(big, $("form[data-submit=absen]")?.dataset.k || "in");
+    if (btnGo) btnGo.textContent = "Simpan " + (($("form[data-submit=absen]")?.dataset.k || "in") === "in" ? "check-in" : "check-out");
     SELFIE = {thumb: small.toDataURL("image/jpeg", .6), big: await new Promise(r => big.toBlob(r, "image/jpeg", .75))};
     const p = $("#selfie-prev"); p.src = SELFIE.thumb.length ? URL.createObjectURL(SELFIE.big) : SELFIE.thumb; p.hidden = false; $("#absen-go").disabled = false;
   } catch (e) { toast("Foto tidak terbaca. Coba ambil ulang."); }
@@ -2324,6 +2410,7 @@ async function submitAbsen(form) {
   if (!SELFIE) return toast("Ambil selfie dulu.");
   const k = form.dataset.k, btn = $("#absen-go"); btn.disabled = true; btn.textContent = "Menyimpan…";
   const rec = {ts: Date.now(), pic: SELFIE.thumb};
+  if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
   if (S.assets && SELFIE.big) { try { const up = await S.assets.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
   const ok = await guard(() => mergeDoc("attendance/" + today(), {rec: {[S.me]: {[k]: rec}}}, {date: today()}));
   if (ok) { SELFIE = null; closeModal(); toast(k === "in" ? "Check-in tercatat " + ftime(rec.ts) : "Check-out tercatat " + ftime(rec.ts)); }
@@ -2349,6 +2436,11 @@ function viewSettings() {
     body = `<form class="panel" data-submit="general"><h2>Umum</h2><div class="fgrid two"><label class="f">Nama outlet<input id="g-outlet" name="outlet" value="${esc(S.settings.outlet || "Coffee Rouna")}" maxlength="40"></label><label class="f">Voucher karyawan per bulan (Rp)<input id="g-vc" name="voucher" type="number" min="0" step="10000" value="${voucherQuota()}"></label><label class="f">Bagi hasil pihak pertama (% net profit)<input id="g-share" name="share" type="number" min="1" max="99" step="1" value="${Math.round(shareA() * 100)}"></label><label class="f">Target waste (% pendapatan)<input id="g-wt" name="wt" type="number" min="0.5" max="20" step="0.5" value="${wasteTarget() * 100}"></label></div><div><button class="btn pri" type="submit">Simpan</button></div></form>
       ${realRole() === "owner" ? `<section class="panel"><h2>Cadangan data</h2><p class="small muted" style="margin:0">Unduh semua data sebagai file JSON, atau pulihkan dari file cadangan (termasuk file data dari ROUNA OS versi Claude). Data staf tidak ikut dipulihkan; atur staf lewat tab Staf.</p>
         <div class="row"><button class="btn" data-act="backup">Unduh cadangan</button><button class="btn" data-act="restore">Pulihkan dari file</button><input id="restore-file" type="file" accept="application/json,.json" hidden></div></section>` : ""}
+      <section class="panel"><h2>Lokasi outlet untuk absen</h2>
+        <p class="small muted" style="margin:0">Berdiri di dalam outlet lalu tekan tombol di bawah. Foto absen akan diberi stempel waktu, nama, koordinat, dan jarak dari outlet; absen di luar radius ditandai kuning.</p>
+        <div class="row">${outletGeo() ? `<a class="chip ok" href="https://www.google.com/maps?q=${outletGeo().lat},${outletGeo().lng}" target="_blank" rel="noopener">📍 ${outletGeo().lat}, ${outletGeo().lng}</a>` : '<span class="chip warn">Belum diatur</span>'}
+          <label class="row small" style="gap:6px">Radius <input id="geo-radius" type="number" min="20" max="1000" step="10" value="${outletGeo()?.radius || 100}" style="width:90px"> m</label>
+          <button class="btn" data-act="setGeo">${outletGeo() ? "Perbarui" : "Pakai"} lokasi saya sekarang</button></div></section>
       <section class="panel"><h2>Data penjualan</h2><p class="small muted" style="margin:0">Tersimpan ${S.sales.length} hari. Hapus data lama jika kapasitas mulai penuh.</p><div><button class="btn danger" data-act="pruneSales">Hapus penjualan lebih dari 180 hari</button></div></section>`;
   }
   return `<div class="pagehead"><h1>Pengaturan</h1></div><div class="seg">${tabs.map(([k, l]) => `<button data-act="ui" data-k="setTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`;
@@ -2918,6 +3010,7 @@ const ACT = {
   pick: b => { S.authUser = b.dataset.id; renderAuth(); setTimeout(() => $(S.authUser ? "#login-pin" : "#login-user")?.focus(), 30); },
   logout: async () => { S.session = null; try { S.db?.close(); await SB.auth.signOut(); } catch (e) {} location.reload(); },
   more: () => { S.ui.more = !S.ui.more; render(); },
+  setGeo: b => setOutletGeo(b),
   goUtang: () => { S.view = "keuangan"; S.ui.finTab = "utang"; render(); },
   hints: () => { S.hints = !S.hints; lsSet("rouna_hints", S.hints ? "1" : null); document.body.classList.toggle("hints", S.hints); render(); toast(S.hints ? "Petunjuk ditampilkan." : "Petunjuk disembunyikan."); },
   moreBg: (b, e) => { if (e.target === b) { S.ui.more = false; render(); } },
@@ -3049,7 +3142,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016110952";
+const BUILD = "20261016113646";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
