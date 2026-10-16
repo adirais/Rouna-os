@@ -1004,7 +1004,7 @@ function viewSales() {
   const recDate = S.ui.recDate || S.closings.find(c => S.sales.some(s => s.date === c.date))?.date || "";
   return `<div class="pagehead"><div><div class="eyebrow">Unggah laporan harian dari Olsera</div><h1>Penjualan</h1></div>
     <div class="row"><label class="btn pri" for="olsera-file" style="cursor:pointer">Unggah file Olsera</label><input id="olsera-file" type="file" accept=".csv,.xlsx,.xls,.pdf" hidden></div></div>
-  <div class="alert acc"><div class="grow small"><b>Dua jenis laporan Olsera bisa diunggah.</b> PDF <i>Laporan Keseluruhan Penjualan</i> untuk ringkasan harian (pendapatan, grup produk, diskon, batal, HPP, pembayaran). Export <i>penjualan per produk</i> (Excel/CSV) untuk analisis produk dan pencocokan stok.</div></div>
+  <div class="alert acc"><div class="grow small"><b>Dua jenis laporan Olsera bisa diunggah.</b> PDF <i>Laporan Keseluruhan Penjualan</i> untuk ringkasan harian (pendapatan, grup produk, diskon, batal, HPP, pembayaran). PDF <i>Penjualan berdasarkan SKU</i> (atau export per produk Excel/CSV) untuk qty semua produk, HPP versi ROUNA, analisis produk, dan pencocokan stok.</div></div>
   ${dailyPanel()}
   ${!S.sales.length ? `<div class="empty"><b>Belum ada data penjualan per produk</b><span>Export laporan penjualan per produk dari Olsera (CSV atau Excel), lalu unggah di sini. Kolom nama produk, jumlah terjual, dan total penjualan akan dikenali otomatis.</span></div>` : ""}
   <div class="grid2">
@@ -1014,12 +1014,12 @@ function viewSales() {
   </div>
   ${day ? `<section class="panel"><div class="panel-h"><h2>Detail ${fdate(day.date)}</h2><div class="row"><span class="small muted">${esc(day.file || "")}</span>${isMgr() ? `<button class="btn sm danger" data-act="delSales" data-d="${day.date}">Hapus hari ini</button>` : ""}</div></div>
     <div class="list">${(() => { const dl = S.daily.find(x => x.date === day.date); return hppRounaRows([day], dl?.pl?.revenue || day.total, dl?.pl?.hpp); })()}</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th><th>Resep</th></tr></thead><tbody>
-    ${[...(day.rows || [])].sort((a, b) => b.rev - a.rev).map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td><td>${S.recipes[slug(r.name)] ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`;
+    <div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th>${skuHas(day) ? `<th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Selisih</th>` : ""}<th>Resep</th></tr></thead><tbody>
+    ${[...(day.rows || [])].sort((a, b) => b.rev - a.rev).map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(day, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`;
 }
 function theoUsage(date) {
   const out = {}, s = S.sales.find(x => x.date === date); let noRec = 0;
-  (s?.rows || []).forEach(r => { const rc = S.recipes[slug(r.name)]; if (!rc) { noRec++; return; } (rc.lines || []).forEach(l => out[l.itemId] = (out[l.itemId] || 0) + l.qty * r.qty); });
+  (s?.rows || []).forEach(r => { const rc = recipeOf(r.name); if (!rc) { noRec++; return; } (rc.lines || []).forEach(l => out[l.itemId] = (out[l.itemId] || 0) + l.qty * r.qty); });
   return {out, noRec};
 }
 function actualUsage(date) {
@@ -1196,8 +1196,10 @@ async function onOlseraPdf(file) {
     const pdf = await lib.getDocument({data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false}).promise;
     const items = [];
     for (let p = 1; p <= pdf.numPages; p++) { const tc = await (await pdf.getPage(p)).getTextContent(); tc.items.forEach(it => { if (it.str && it.str.trim()) items.push({str: it.str, x: it.transform[4], y: -it.transform[5], w: it.width, page: p}); }); }
+    const K = parseOlseraSku(items);
+    if (K) { if (!K.rows.length) return toast("Tabel produk di PDF ini tidak terbaca."); SKU = {...K, file: file.name}; return modalSku(); }
     const R = parseOlseraSummary(items);
-    if (!R.start || (!R.categories.length && R.pl.revenue == null)) return toast("PDF ini bukan Laporan Keseluruhan Penjualan Olsera.");
+    if (!R.start || (!R.categories.length && R.pl.revenue == null)) return toast("PDF ini bukan Laporan Keseluruhan Penjualan atau Penjualan berdasarkan SKU dari Olsera.");
     DAILY = {...R, file: file.name}; modalDaily();
   } catch (e) { console.error(e); toast("PDF tidak terbaca. Coba unggah ulang."); }
 }
@@ -1268,7 +1270,7 @@ async function submitImport() {
 
 /* ---------- ANALYTICS ---------- */
 const fcTarget = () => (+S.settings.fc || 30) / 100;
-const fcFor = name => { const t = S.recipes[slug(name)]?.type; return t === "Minuman" && +S.settings.fcMin ? S.settings.fcMin / 100 : t === "Makanan" && +S.settings.fcMak ? S.settings.fcMak / 100 : fcTarget(); };
+const fcFor = name => { const t = recipeOf(name)?.type; return t === "Minuman" && +S.settings.fcMin ? S.settings.fcMin / 100 : t === "Makanan" && +S.settings.fcMak ? S.settings.fcMak / 100 : fcTarget(); };
 function perfStatus(p, A) {
   const rank = A.byRev.indexOf(p);
   if (p.quad === "dog" || (p.mix < (A.prods.length ? .5 / A.prods.length : 0)) || p.growth < -.3) return "Tidak perform";
@@ -1295,7 +1297,7 @@ async function exportReport() {
   catch (e) { if (e.code !== "declined") toast("Laporan tidak bisa diunduh di tampilan ini."); }
 }
 function recipeCost(name) {
-  const rc = S.recipes[slug(name)]; if (!rc) return null;
+  const rc = recipeOf(name); if (!rc) return null;
   return (rc.lines || []).reduce((s, l) => s + l.qty * itemCost(l.itemId), 0);
 }
 function analyze(days) {
@@ -2996,7 +2998,7 @@ const ACT2 = {
   tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
 };
 const SUBMIT2 = {
-  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv,
+  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(),
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
@@ -3032,7 +3034,69 @@ function hppRounaRows(list, base, olsHpp) {
   return `<div class="li"><span class="grow"><b>HPP versi ROUNA</b><span class="sub small muted">jumlah terjual × COGS resep · ${pct(den ? h.hpp / den : 0)} dari ${part ? "penjualan per produk" : "pendapatan"}</span></span><span class="num"><b>${rp(h.hpp)}</b></span></div>
     ${part ? `<div class="li"><span class="grow small" style="color:var(--warn)">Data per produk baru ${rp(h.rev)} dari pendapatan ${rp(base)} — belum bisa dibandingkan dengan Olsera<span class="sub small muted">Unggah export penjualan per produk yang lengkap untuk periode yang sama</span></span></div>` : ""}
     ${gap != null ? `<div class="li"><span class="grow muted">Selisih Olsera − ROUNA<span class="sub small muted">${Math.abs(gap) > h.hpp * .05 ? "cek harga pokok produk di Olsera" : "masih wajar (≤5%)"}</span></span><span class="num" style="color:${Math.abs(gap) > h.hpp * .05 ? "var(--warn)" : "inherit"}">${rp(gap)}</span></div>` : ""}
+    ${(() => { const z = []; list.forEach(x => (x.rows || []).forEach(r => { if (r.modal === 0 && r.qty) { const c = recipeCost(r.name); if (c != null) z.push({name: r.name, v: c * r.qty}); } })); return z.length ? `<div class="li"><span class="grow small" style="color:var(--warn)">${z.length} produk harga modalnya 0 di Olsera — HPP Olsera kurang ± ${rp(z.reduce((s, x) => s + x.v, 0))} menurut resep<span class="sub small muted">Isi harga modal di back office Olsera: ${z.slice(0, 5).map(x => esc(x.name)).join(", ")}${z.length > 5 ? ", …" : ""}</span></span></div>` : ""; })()}
     ${h.missList.length ? `<div class="li"><span class="grow small" style="color:var(--warn)">${h.missList.length} produk belum punya resep (${pct(1 - h.cov)} penjualan) — HPP-nya belum terhitung<span class="sub small muted">${h.missList.slice(0, 5).map(m => esc(m.name)).join(", ")}${h.missList.length > 5 ? ", …" : ""}</span></span></div>` : ""}`;
+}
+
+/* ===== Impor PDF Olsera "Penjualan berdasarkan SKU" (semua produk + harga modal Olsera) ===== */
+function parseOlseraSku(items) {
+  const hd = n => items.find(i => i.str.trim().toLowerCase() === n);
+  const H = {name: hd("produk"), alt: hd("alternative") || hd("alternative name"), vr: hd("varian"), grp: hd("grup"), sku: hd("sku"), qty: hd("terjual"), rev: hd("penjualan"), modal: hd("modal")};
+  if (!H.name || !H.grp || !H.qty || !H.rev || !H.modal || !hd("sku")) return null;
+  const right = i => i.x + i.w, near = (i, h) => Math.abs(right(i) - right(h)) <= 5;
+  const val = s => { const m = String(s).replace(/idr/gi, "").trim(); if (!/^-?\(?[\d.,]+\)?$/.test(m)) return null; let v = +m.replace(/[()]/g, "").replace(/\./g, "").replace(",", "."); if (/\(/.test(m)) v = -v; return isNaN(v) ? null : v; };
+  const all = items.map(i => i.str).join(" "), dm = all.match(/tanggal jual\s*:\s*([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})\s*-\s*([A-Za-z]{3,}\s+\d{1,2},\s*\d{4})/i);
+  const R = {start: dm ? monDate(dm[1]) : null, end: dm ? monDate(dm[2]) : null, rows: []};
+  const nameEnd = (H.alt || H.vr || H.grp).x - 1, vrX = H.vr ? H.vr.x - 2 : null, grpX = H.grp.x - 2, grpEnd = (H.sku || H.qty).x - 2;
+  const anchors = items.filter(i => near(i, H.qty) && /^\d+$/.test(i.str.trim()) && i !== H.qty);
+  const pages = [...new Set(anchors.map(a => a.page))];
+  pages.forEach(pg => {
+    const A = anchors.filter(a => a.page === pg).sort((a, b) => a.y - b.y);
+    A.forEach((a, k) => {
+      const nx = A[k + 1] ? A[k + 1].y : Infinity;
+      const its = items.filter(i => i.page === pg && i.y >= a.y - 3 && i.y < nx - 3).sort((p, q) => p.y - q.y || p.x - q.x);
+      const txt = f => its.filter(f).map(i => i.str.trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      const name = txt(i => i.x < nameEnd), variant = vrX != null ? txt(i => i.x >= vrX && i.x < grpX) : "", cat = txt(i => i.x >= grpX && i.x < grpEnd);
+      const num1 = h => { const it = its.find(i => near(i, h) && val(i.str) != null); return it ? val(it.str) : 0; };
+      if (!name || /^total\b/i.test(name)) return;
+      R.rows.push({name, variant, cat, qty: +a.str, rev: num1(H.rev), modal: num1(H.modal)});
+    });
+  });
+  return R;
+}
+let SKU = null;
+function modalSku() {
+  const R = SKU, multi = R.start !== R.end, exist = S.sales.some(s => s.date === R.start);
+  const tq = R.rows.reduce((s, r) => s + r.qty, 0), tr = R.rows.reduce((s, r) => s + r.rev, 0), tm = R.rows.reduce((s, r) => s + r.modal, 0);
+  const h = hppRouna([{rows: R.rows}]), zero = R.rows.filter(r => !r.modal && r.qty).length;
+  openModal(`<form data-submit="sku" class="modal wide" role="dialog" aria-label="Penjualan per produk"><div class="modal-h"><h2>Penjualan per produk · ${R.start ? fdate(R.start) : "?"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${multi ? `<div class="alert crit"><div class="grow">Laporan ini mencakup ${fdate(R.start)} – ${fdate(R.end)}. Unggah per satu hari supaya bisa dicocokkan dengan ringkasan harian dan closing.</div></div>` : ""}
+    <div class="grid3" style="grid-template-columns:repeat(4,minmax(0,1fr))"><div class="kpi"><span class="eyebrow">Produk</span><span class="v">${R.rows.length}</span><span class="small muted">${fq(tq)} terjual</span></div>
+      <div class="kpi"><span class="eyebrow">Penjualan</span><span class="v">${rpk(tr)}</span></div>
+      <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${rpk(tm)}</span><span class="small muted">${pct(tr ? tm / tr : 0)}${zero ? ` · ${zero} produk modal 0` : ""}</span></div>
+      <div class="kpi"><span class="eyebrow">HPP ROUNA</span><span class="v">${rpk(h.hpp)}</span><span class="small muted">${pct(h.revCov ? h.hpp / tr : 0)}${h.missList.length ? ` · ${h.missList.length} tanpa resep` : ""}</span></div></div>
+    ${exist ? `<div class="alert warn"><div class="grow">Data per produk ${fdate(R.start)} sudah ada dan akan diganti.</div></div>` : ""}
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" ${multi || !R.start || !R.rows.length ? "disabled" : ""}>Simpan</button></div></form>`);
+}
+async function submitSku() {
+  const R = SKU; if (!R) return;
+  const rows = R.rows.map(r => ({name: r.name, cat: r.cat, qty: r.qty, rev: r.rev, modal: r.modal, ...(r.variant ? {variant: r.variant} : {})}));
+  const d = {date: R.start, rows, total: rows.reduce((s, r) => s + r.rev, 0), qty: rows.reduce((s, r) => s + r.qty, 0), modal: rows.reduce((s, r) => s + r.modal, 0), src: "olsera-sku", file: R.file, uploadedAt: Date.now(), by: S.me};
+  if (await guard(() => S.db.doc("sales/" + d.date).set(d))) { closeModal(); SKU = null; S.ui.salesDay = d.date; S.ui.dailyDay = d.date; toast("Penjualan per produk " + fdate(d.date) + " tersimpan."); }
+}
+const skuHas = day => (day.rows || []).some(r => r.modal != null);
+function skuCols(day, r) {
+  if (!skuHas(day)) return "";
+  const c = recipeCost(r.name), hr = c != null ? c * r.qty : null, diff = hr != null && r.modal != null ? r.modal - hr : null, big = diff != null && Math.abs(diff) > Math.max(hr * .1, 1000);
+  return `<td class="r num">${r.modal ? rp(r.modal) : `<span class="chip warn">0</span>`}<span class="sub">${r.rev && r.modal ? pct(r.modal / r.rev) : ""}</span></td><td class="r num">${hr != null ? rp(hr) + `<span class="sub">${r.rev ? pct(hr / r.rev) : ""}</span>` : `<span class="muted">-</span>`}</td><td class="r num" style="color:${big ? "var(--warn)" : "inherit"}">${diff != null ? (Math.abs(diff) < 1 ? "Rp 0" : rp(Math.round(diff))) : "-"}</td>`;
+}
+/* cocokkan nama produk Olsera dengan resep: persis → tanpa spasi/tanda → bagian sebelum "/" → nama di COGS */
+const RCP_IDX = {k: null, m: {}};
+function recipeOf(name) {
+  const r = S.recipes[slug(String(name))]; if (r) return r;
+  if (RCP_IDX.k !== S.recipes) { RCP_IDX.k = S.recipes; RCP_IDX.m = {}; Object.entries(S.recipes).forEach(([id, rc]) => [id, rc.product, rc.cogsName].forEach(n => { if (n) RCP_IDX.m[norm(n).replace(/[^a-z0-9]/g, "")] ||= rc; })); }
+  const c = s => norm(s).replace(/[^a-z0-9]/g, "");
+  return RCP_IDX.m[c(name)] || (/\//.test(name) ? RCP_IDX.m[c(name.split("/")[0])] : null) || null;
 }
 
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
@@ -3378,7 +3442,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016123039";
+const BUILD = "20261016124016";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
