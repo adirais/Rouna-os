@@ -230,7 +230,7 @@ body:not(.hints) main .panel > p.small.muted, body:not(.hints) .hint{display:non
 .sh-sel{width:52px;appearance:none;-webkit-appearance:none;cursor:pointer}
 .sh-P{background:#E2ECF6;border-color:#C5D8EC}.sh-S{background:#FFF9C4;border-color:#F2E88A}.sh-M{background:#E4E1F5;border-color:#CFC9EE}.sh-L{background:var(--sunk);color:var(--muted)}.sh-x{color:var(--muted)}
 .pay-tbl td,.pay-tbl th{white-space:nowrap}.pay-tbl tr.tot td{border-top:2px solid var(--line)}
-.pay-tbl input.cell-in{width:110px!important;text-align:right;padding:6px 8px!important}
+.pay-tbl input.cell-in{width:92px!important;text-align:right;padding:6px 8px!important}
 a.btn{text-decoration:none;color:inherit;display:inline-block}
 form[data-submit=shiftDefs] .fgrid{max-width:640px}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.linkbtn:hover b{color:var(--accent);text-decoration:underline}
@@ -242,6 +242,8 @@ code{background:var(--sunk);padding:1px 6px;border-radius:6px;font-size:.9em}
 
 .kpi-btn{text-align:left;cursor:pointer;font:inherit;color:inherit}
 .kpi-btn:hover{border-color:var(--brand)}
+
+.sh-SX{background:#F9E1DD;border-color:#EDB8AF;color:#8B2A20}.sh-C{background:#DFF1E6;border-color:#B9DEC6;color:#1E5C3A}
 </style>
 </head>
 <body>
@@ -2272,7 +2274,7 @@ async function submitVoucher(form) {
 
 /* ---------- ATTENDANCE ---------- */
 function viewAbsen() {
-  const t = today(), att = S.attendance.find(a => a.date === t), mine = att?.rec?.[S.me];
+  const t = today(), att = S.attendance.find(a => a.date === t), mine = S.attendance.find(a => a.date === attDate())?.rec?.[S.me];
   const staff = Object.entries(S.staff).filter(([, s]) => s.active !== false).sort((a, b) => a[1].name.localeCompare(b[1].name));
   const pic = x => x ? `<a href="${esc(x.asset ? photoSrc(x) : x.pic || "")}" target="_blank" rel="noopener" title="Lihat foto"><img class="thumb" src="${esc(x.pic || photoSrc(x))}" alt="Foto" loading="lazy"></a>` : "";
   let recap = "";
@@ -2296,11 +2298,11 @@ function viewAbsen() {
   ${recap}`;
 }
 function modalAbsen() {
-  const mine = S.attendance.find(a => a.date === today())?.rec?.[S.me];
+  const ad = attDate(), mine = S.attendance.find(a => a.date === ad)?.rec?.[S.me];
   if (mine?.out) return toast("Absensi hari ini sudah lengkap.");
   const kind = mine?.in ? "out" : "in";
   setTimeout(startGeo, 0);
-  openModal(`<form data-submit="absen" data-k="${kind}" class="modal" role="dialog" aria-label="Absensi">
+  openModal(`<form data-submit="absen" data-k="${kind}" data-date="${ad}" class="modal" role="dialog" aria-label="Absensi">
     <div class="modal-h"><h2>${kind === "in" ? "Check-in" : "Check-out"} · ${esc(me().name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
     <div><span id="geo-status" class="chip">Mengambil lokasi…</span></div>
@@ -2390,6 +2392,11 @@ async function setOutletGeo(btn) {
   }, () => { toast("Lokasi tidak didapat. Izinkan akses lokasi di browser."); btn.disabled = false; render(); }, {enableHighAccuracy: true, timeout: 20000});
 }
 
+function attDate() {
+  const t = today(), y = addDays(t, -1), mt = S.attendance.find(a => a.date === t)?.rec?.[S.me], my = S.attendance.find(a => a.date === y)?.rec?.[S.me];
+  if (!mt?.in && my?.in && !my.out && Date.now() - my.in.ts < 20 * 36e5) return y;
+  return t;
+}
 let SELFIE = null;
 function shrink(file, size, q) {
   return new Promise((res, rej) => { const img = new Image(); const url = URL.createObjectURL(file);
@@ -2412,7 +2419,8 @@ async function submitAbsen(form) {
   const rec = {ts: Date.now(), pic: SELFIE.thumb};
   if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
   if (S.assets && SELFIE.big) { try { const up = await S.assets.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
-  const ok = await guard(() => mergeDoc("attendance/" + today(), {rec: {[S.me]: {[k]: rec}}}, {date: today()}));
+  const ad = form.dataset.date || today();
+  const ok = await guard(() => mergeDoc("attendance/" + ad, {rec: {[S.me]: {[k]: rec}}}, {date: ad}));
   if (ok) { SELFIE = null; closeModal(); toast(k === "in" ? "Check-in tercatat " + ftime(rec.ts) : "Check-out tercatat " + ftime(rec.ts)); }
   else { btn.disabled = false; btn.textContent = "Simpan"; }
 }
@@ -2561,29 +2569,36 @@ function primeCard(P) {
     <p class="small muted" style="margin:0">Prime cost = (bahan baku + produk vendor + gaji) ÷ pendapatan. Batas sehat F&B umumnya 55–65%; ubah batas di Pengaturan → Target & notifikasi.</p></section>`;
 }
 
-/* ===== Jadwal shift ===== */
-const DEF_SHIFTS = [{k: "P", n: "Pagi", s: "07:00", e: "15:00"}, {k: "S", n: "Siang", s: "11:00", e: "19:00"}, {k: "M", n: "Malam", s: "15:00", e: "23:00"}];
+/* ===== Jadwal shift (mengikuti SOP General) ===== */
+const DEF_SHIFTS = [
+  {k: "B1", n: "Bar shift 1", s: "06:30", e: "14:30"}, {k: "BM", n: "Bar middle", s: "14:00", e: "22:00"}, {k: "B2", n: "Bar shift 2", s: "16:00", e: "00:00"},
+  {k: "K1", n: "Kitchen pagi", s: "08:30", e: "16:30"}, {k: "K2", n: "Kitchen malam", s: "16:00", e: "00:00"},
+  {k: "R1", n: "Runner shift 1", s: "12:00", e: "20:00"}, {k: "R2", n: "Runner shift 2", s: "16:00", e: "00:00"}];
+const LEAVE = {L: ["Libur / off", 0], C: ["Cuti", 0], I: ["Izin disetujui", 0], SK: ["Sakit (ada surat)", 0], SX: ["Sakit tanpa surat", 1]};
 const shiftDefs = () => (Array.isArray(S.settings.shifts) && S.settings.shifts.length ? S.settings.shifts : DEF_SHIFTS);
 const shiftDef = k => shiftDefs().find(x => x.k === k);
-const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 10;
+const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 5;
+const potMenitDefault = () => +S.settings.potMenit || 0;
 const planOf = date => S.shifts.find(x => x.month === date.slice(0, 7))?.plan?.[date] || {};
-function shiftLabel(k) { if (k === "L") return "Libur"; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
+function shiftLabel(k) { if (LEAVE[k]) return LEAVE[k][0]; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
+function shCls(k) { if (!k) return "sh-x"; if (k === "SX") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
 function weekStart(d) { const x = new Date(d + "T12:00:00"); const dw = (x.getDay() + 6) % 7; return addDays(d, -dw); }
-function myShiftChip() { const k = planOf(today())[S.me]; return k ? `<span class="chip ${k === "L" ? "" : "acc"}">${esc(shiftLabel(k))}</span>` : ""; }
+function myShiftChip() { const k = planOf(today())[S.me]; return k ? `<span class="chip ${LEAVE[k] ? "" : "acc"}">${esc(shiftLabel(k))}</span>` : ""; }
 function viewShift() {
   const ws = S.ui.wk || weekStart(today()), days = [...Array(7)].map((_, i) => addDays(ws, i)), edit = canShift();
   const staff = Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name));
-  const opts = [["", "–"], ...shiftDefs().map(d => [d.k, d.k]), ["L", "L"]];
+  const opts = [["", "–"], ...shiftDefs().map(d => [d.k, d.k]), ...Object.keys(LEAVE).map(k => [k, k])];
   const cell = (d, id) => { const k = planOf(d)[id] || "";
-    return edit ? `<select class="sh-sel sh-${k || "x"}" data-shift="${d}" data-sid="${id}" aria-label="Shift ${esc(S.staff[id].name)} ${d}">${opts.map(([v, l]) => `<option value="${v}" ${v === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
-      : `<span class="sh sh-${k || "x"}">${k || "–"}</span>`; };
-  const count = d => Object.values(planOf(d)).filter(k => k && k !== "L").length;
+    return edit ? `<select class="sh-sel ${shCls(k)}" data-shift="${d}" data-sid="${id}" aria-label="Shift ${esc(S.staff[id].name)} ${d}">${opts.map(([v, l]) => `<option value="${v}" ${v === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
+      : `<span class="sh ${shCls(k)}">${k || "–"}</span>`; };
+  const count = d => Object.values(planOf(d)).filter(k => k && !LEAVE[k]).length;
   return `<section class="panel"><div class="panel-h"><div class="row"><button class="btn sm" data-act="wk" data-v="-7" aria-label="Minggu sebelumnya">‹</button><h2 style="margin:0 4px">${fdate(days[0])} – ${fdate(days[6])}</h2><button class="btn sm" data-act="wk" data-v="7" aria-label="Minggu berikutnya">›</button></div>
       ${edit ? `<button class="btn sm" data-act="copyWeek">Salin minggu lalu</button>` : ""}</div>
     <div class="tbl-wrap"><table class="shift-tbl"><thead><tr><th>Staf</th>${days.map(d => `<th class="c ${d === today() ? "today" : ""}">${fdate(d).split(",")[0]}<span class="sub">${+d.slice(8)}</span></th>`).join("")}</tr></thead><tbody>
       ${staff.map(([id, s]) => `<tr class="${id === S.me ? "me" : ""}"><td><b>${esc(s.name)}</b><span class="sub">${ROLES[s.role]}</span></td>${days.map(d => `<td class="c">${cell(d, id)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="8" class="muted">Belum ada staf. Tambah di Pengaturan → Staf.</td></tr>`}
       <tr><td class="small muted">Masuk</td>${days.map(d => `<td class="c small muted num">${count(d) || ""}</td>`).join("")}</tr></tbody></table></div>
-    <div class="row small muted">${shiftDefs().map(d => `<span><b>${d.k}</b> ${esc(d.n)} ${d.s}–${d.e}</span>`).join("")}<span><b>L</b> Libur</span><span>Telat bila masuk lewat ${tolTelat()} menit</span></div></section>`;
+    <div class="row small muted">${shiftDefs().map(d => `<span><b>${d.k}</b> ${esc(d.n)} ${d.s}–${d.e}</span>`).join("")}</div>
+    <div class="row small muted">${Object.entries(LEAVE).map(([k, v]) => `<span><b>${k}</b> ${v[0]}${v[1] ? " (dipotong)" : ""}</span>`).join("")}<span>Toleransi telat ${tolTelat()} menit/shift</span></div></section>`;
 }
 async function saveShift(date, sid, k) {
   const mo = date.slice(0, 7);
@@ -2596,75 +2611,172 @@ async function copyWeek() {
   const ok = await guard(async () => { for (const [mo, plan] of Object.entries(patch)) await mergeDoc("shift/" + mo, {plan}, {month: mo}); });
   if (ok) toast("Jadwal minggu lalu disalin.");
 }
-/* attendance vs schedule for one staff in a month */
+/* rekap absensi satu staf dalam sebulan, sesuai SOP: toleransi 5 menit/shift, akumulasi bulanan */
 function attStats(mo, sid) {
-  const last = mo === today().slice(0, 7) ? today() : mo + "-" + pad(daysInMonth(mo));
-  const g = {jadwal: 0, hadir: 0, absen: 0, telat: 0, telatMin: 0, tanpaJadwal: 0};
+  const last = mo === today().slice(0, 7) ? today() : mo + "-" + pad(daysInMonth(mo)), tol = tolTelat();
+  const g = {jadwal: 0, hadir: 0, alpha: 0, sakitTS: 0, izin: 0, cuti: 0, sakit: 0, libur: 0, tanpaJadwal: 0, jam: 0, telat: 0, telatMin: 0, telatHitung: 0, pulangCepat: 0, lupaOut: 0, days: []};
   for (let d = 1; d <= daysInMonth(mo); d++) {
     const ds = mo + "-" + pad(d); if (ds > last) break;
-    const k = planOf(ds)[sid], rec = S.attendance.find(a => a.date === ds)?.rec?.[sid];
-    if (rec?.in) g.hadir++;
-    if (!k || k === "L") { if (rec?.in) g.tanpaJadwal++; continue; }
-    if (ds === today() && !rec?.in) continue;
-    g.jadwal++;
-    if (!rec?.in) { g.absen++; continue; }
-    const def = shiftDef(k); if (!def) continue;
-    const late = (rec.in.ts - new Date(ds + "T" + def.s + ":00").getTime()) / 60000;
-    if (late > tolTelat()) { g.telat++; g.telatMin += Math.round(late); }
+    const k = planOf(ds)[sid] || "", rec = S.attendance.find(a => a.date === ds)?.rec?.[sid], def = shiftDef(k);
+    const row = {date: ds, k, label: k ? shiftLabel(k) : "", in: rec?.in?.ts || 0, out: rec?.out?.ts || 0, jam: 0, late: 0, early: 0, status: "", geo: rec?.in?.geo};
+    if (rec?.in) { g.hadir++; if (rec.out) { row.jam = Math.max(0, (rec.out.ts - rec.in.ts) / 36e5); g.jam += row.jam; } else if (ds < today()) { g.lupaOut++; } }
+    if (LEAVE[k]) {
+      row.status = LEAVE[k][0];
+      if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++;
+      if (rec?.in) { g.tanpaJadwal++; row.status += " (tetap masuk)"; }
+    } else if (!k || !def) {
+      if (rec?.in) { g.tanpaJadwal++; row.status = "Masuk tanpa jadwal"; } else { if (!rec) continue; }
+    } else if (!rec?.in) {
+      if (ds === today()) { row.status = "Belum absen"; } else { g.jadwal++; g.alpha++; row.status = "Alpha"; }
+    } else {
+      g.jadwal++;
+      const st = new Date(ds + "T" + def.s + ":00").getTime(); let en = new Date(ds + "T" + def.e + ":00").getTime(); if (en <= st) en += 864e5;
+      row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4)); g.telatMin += row.late; if (row.late > tol) g.telat++;
+      if (rec.out) { row.early = Math.max(0, Math.round((en - rec.out.ts) / 6e4)); if (row.early > 0) g.pulangCepat += row.early; }
+      row.status = row.late > tol ? `Telat ${row.late} mnt` : "Tepat waktu"; if (!rec.out && ds < today()) row.status += " · lupa check-out";
+    }
+    g.days.push(row);
   }
+  g.telatHitung = Math.max(0, g.telatMin - tol * g.jadwal);
+  g.sp = g.telatHitung > 450 || g.alpha >= 3 ? ["SP3", "crit"] : g.alpha >= 2 ? ["SP2", "crit"] : g.telatHitung > 350 ? ["SP1 tertulis", "crit"] : g.telatHitung > 100 ? ["Teguran lisan", "warn"] : ["Aman", "ok"];
   return g;
 }
+const fjam = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + " j " + pad(m % 60) + " m"; };
 
 /* ===== Gaji per orang ===== */
 const salaryOf = sid => S.salary[sid] || {};
 function payRows(mo) {
   const saved = payrollOf(mo)?.people || {};
   return Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, s]) => {
-    const sal = salaryOf(id), a = attStats(mo, id), pk = +sal.pokok || 0, pa = sal.potAbsen != null && sal.potAbsen !== "" ? +sal.potAbsen : Math.round(pk / 26), pt = +sal.potTelat || 0;
+    const sal = salaryOf(id), a = attStats(mo, id), pk = +sal.pokok || 0, pa = sal.potAbsen != null && sal.potAbsen !== "" ? +sal.potAbsen : Math.round(pk / 26);
+    const pm = sal.potTelat != null && sal.potTelat !== "" ? +sal.potTelat : potMenitDefault();
     const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0;
-    const potA = a.absen * pa, potT = a.telat * pt, net = pk - kas - potA - potT + bon;
-    return {id, name: s.name, role: s.role, a, pk, pa, pt, kas, bon, potA, potT, net};
+    const potA = (a.alpha + a.sakitTS) * pa, potT = Math.round(a.telatHitung * pm), net = pk - kas - potA - potT + bon;
+    return {id, name: s.name, role: s.role, a, pk, pa, pm, kas, bon, potA, potT, net};
   });
 }
 function viewPayPeople(mo) {
   const rows = payRows(mo), saved = payrollOf(mo)?.people;
   const tot = k => rows.reduce((s, r) => s + r[k], 0);
   const noSal = rows.filter(r => !r.pk).length;
-  return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
-    <p class="small muted" style="margin:0">Absen dan telat dihitung otomatis dari Jadwal shift dan absensi selfie. Isi kasbon dan bonus di tabel. Data ini hanya terlihat oleh Owner, Manager, dan Finance.</p>
-    ${noSal ? `<div class="alert warn"><div class="grow small"><b>${noSal} staf</b> belum punya gaji pokok. Klik nama untuk mengatur.</div></div>` : ""}
-    <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Jadwal</th><th class="r">Absen</th><th class="r">Telat</th><th class="r">Pokok</th><th class="r">Pot. absen</th><th class="r">Pot. telat</th><th class="r">Kasbon</th><th class="r">Bonus</th><th class="r">Bersih</th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td><button class="linkbtn" data-act="salEdit" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
-      <td class="r num">${r.a.jadwal}</td><td class="r num">${r.a.absen ? `<span class="chip crit">${r.a.absen}</span>` : 0}</td><td class="r num">${r.a.telat ? `<span class="chip warn">${r.a.telat}</span><span class="sub">${r.a.telatMin} mnt</span>` : 0}</td>
-      <td class="r num">${r.pk ? rp(r.pk) : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA)}</td><td class="r num">${rp(r.potT)}</td>
+  return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm" data-act="payPdf">Unduh rekap PDF</button><button class="btn sm" data-act="slipPdf">Unduh slip per orang</button><button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
+    <p class="small muted" style="margin:0">Dihitung dari Jadwal shift dan absensi selfie sesuai SOP: toleransi ${tolTelat()} menit per shift, keterlambatan diakumulasi sebulan (menit dihitung = total telat − ${tolTelat()} × jumlah shift). Alpha dan sakit tanpa surat dipotong per hari; telat dipotong per menit dihitung. Klik nama untuk rincian harian.</p>
+    ${noSal ? `<div class="alert warn"><div class="grow small"><b>${noSal} staf</b> belum punya gaji pokok. Klik nama → Atur gaji.</div></div>` : ""}
+    <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Hadir/shift</th><th class="r">Jam kerja</th><th class="r">Telat</th><th class="r">Alpha / sakit TS</th><th>Status SOP</th><th class="r">Pokok</th><th class="r">Potongan</th><th class="r">Kasbon</th><th class="r">Bonus</th><th class="r">Bersih</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><button class="linkbtn" data-act="payDetail" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
+      <td class="r num">${r.a.hadir}/${r.a.jadwal}${r.a.izin + r.a.cuti + r.a.sakit ? `<span class="sub">izin/cuti/sakit ${r.a.izin + r.a.cuti + r.a.sakit}</span>` : ""}</td>
+      <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}</td>
+      <td class="r num">${r.a.telatMin ? `${r.a.telat}× · ${r.a.telatMin} mnt<span class="sub">dihitung ${r.a.telatHitung} mnt</span>` : "0"}</td>
+      <td class="r num">${r.a.alpha + r.a.sakitTS ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}</span>` : "0"}</td>
+      <td><span class="chip ${r.a.sp[1]}">${r.a.sp[0]}</span></td>
+      <td class="r num">${r.pk ? rp(r.pk) : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA + r.potT)}${r.potA && r.potT ? `<span class="sub">absen ${rpk(r.potA)} · telat ${rpk(r.potT)}</span>` : ""}</td>
       <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.kas || ""}" data-pp="kasbon" data-sid="${r.id}" aria-label="Kasbon ${esc(r.name)}"></td>
       <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.bon || ""}" data-pp="bonus" data-sid="${r.id}" aria-label="Bonus ${esc(r.name)}"></td>
-      <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="10" class="muted">Belum ada staf aktif.</td></tr>`}
-    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${tot2(rows, r => r.a.absen)}</td><td class="r num">${tot2(rows, r => r.a.telat)}</td><td class="r num">${rp(tot("pk"))}</td><td class="r num">${rp(tot("potA"))}</td><td class="r num">${rp(tot("potT"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
+      <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="11" class="muted">Belum ada staf aktif.</td></tr>`}
+    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${fjam(tot2(rows, r => r.a.jam))}</td><td class="r num">${tot2(rows, r => r.a.telatHitung)} mnt</td><td class="r num">${tot2(rows, r => r.a.alpha + r.a.sakitTS)}</td><td></td><td class="r num">${rp(tot("pk"))}</td><td class="r num">${rp(tot("potA") + tot("potT"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
     </tbody></table></div></section>`;
 }
 const tot2 = (rows, f) => rows.reduce((s, r) => s + f(r), 0);
+function modalPayDetail(id) {
+  const mo = S.ui.finMonth, r = payRows(mo).find(x => x.id === id); if (!r) return;
+  const a = r.a;
+  openModal(`<div class="modal wide" role="dialog" aria-label="Rincian absensi"><div class="modal-h"><div><div class="eyebrow">${monthLabel(mo)} · ${ROLES[r.role]}</div><h2>${esc(r.name)}</h2></div><div class="row"><button class="btn sm" data-act="salEdit" data-id="${id}">Atur gaji</button><button class="btn sm" data-act="slipPdf" data-id="${id}">Unduh slip PDF</button><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
+    <div class="grid3"><div class="kpi"><span class="eyebrow">Hadir / shift</span><span class="v">${a.hadir}/${a.jadwal}</span><span class="small muted">jam kerja ${fjam(a.jam)}</span></div>
+      <div class="kpi"><span class="eyebrow">Telat</span><span class="v">${a.telatMin} mnt</span><span class="small muted">${a.telat}× · dihitung ${a.telatHitung} mnt</span></div>
+      <div class="kpi"><span class="eyebrow">Alpha · sakit tanpa surat</span><span class="v">${a.alpha} · ${a.sakitTS}</span><span class="small muted">izin ${a.izin} · cuti ${a.cuti} · sakit ${a.sakit}</span></div>
+      <div class="kpi"><span class="eyebrow">Status SOP</span><span class="v"><span class="chip ${a.sp[1]}">${a.sp[0]}</span></span><span class="small muted">pulang cepat ${a.pulangCepat} mnt</span></div></div>
+    <div class="list">
+      <div class="li"><span class="grow">Gaji pokok</span><span class="num">${rp(r.pk)}</span></div>
+      <div class="li"><span class="grow">(−) Alpha & sakit tanpa surat<span class="sub small muted">${a.alpha + a.sakitTS} hari × ${rp(r.pa)}</span></span><span class="num">${rp(r.potA)}</span></div>
+      <div class="li"><span class="grow">(−) Keterlambatan<span class="sub small muted">${a.telatHitung} menit × ${rp(r.pm)}</span></span><span class="num">${rp(r.potT)}</span></div>
+      <div class="li"><span class="grow">(−) Kasbon</span><span class="num">${rp(r.kas)}</span></div>
+      <div class="li"><span class="grow">(+) Bonus</span><span class="num">${rp(r.bon)}</span></div>
+      <div class="li"><span class="grow"><b>Gaji bersih</b></span><span class="num"><b>${rp(r.net)}</b></span></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Jadwal</th><th class="r">Masuk</th><th class="r">Pulang</th><th class="r">Jam kerja</th><th class="r">Telat</th><th>Keterangan</th></tr></thead><tbody>
+      ${a.days.map(d => `<tr><td>${fdate(d.date)}</td><td>${d.k ? `<span class="sh ${shCls(d.k)}">${d.k}</span>` : "–"}</td><td class="r num">${d.in ? ftime(d.in) : "–"}</td><td class="r num">${d.out ? ftime(d.out) : "–"}</td><td class="r num">${d.jam ? fjam(d.jam) : "–"}</td><td class="r num">${d.late ? d.late + " mnt" : "–"}</td><td class="small">${esc(d.status)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Belum ada jadwal atau absensi bulan ini.</td></tr>`}
+    </tbody></table></div></div>`);
+}
 async function setPayPerson(sid, k, v) {
   const mo = S.ui.finMonth;
   await guard(() => mergeDoc("payroll/" + mo, {people: {[sid]: {[k]: num(v)}}}, {month: mo}));
 }
 async function savePayPeople() {
   const mo = S.ui.finMonth, rows = payRows(mo), sum = f => rows.reduce((s, r) => s + f(r), 0);
-  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, absen: r.a.absen, telat: r.a.telat, telatMin: r.a.telatMin, pokok: r.pk, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, bersih: r.net});
+  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, alpha: r.a.alpha, sakitTS: r.a.sakitTS, izin: r.a.izin, cuti: r.a.cuti, sakit: r.a.sakit, jam: +r.a.jam.toFixed(2), telat: r.a.telat, telatMin: r.a.telatMin, telatHitung: r.a.telatHitung, sp: r.a.sp[0], pokok: r.pk, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, bersih: r.net});
   const d = {month: mo, n: rows.length, pokok: sum(r => r.pk), kasbon: sum(r => r.kas), potAbsen: sum(r => r.potA), potTelat: sum(r => r.potT), bonus: sum(r => r.bon), bersih: sum(r => r.net), people, src: "per orang", by: S.me, ts: Date.now()};
-  if (await guard(() => mergeDoc("payroll/" + mo, d, {}))) toast("Gaji " + monthLabel(mo) + " tersimpan: " + rp(d.bersih) + ". Laba-rugi ikut diperbarui.");
+  if (await guard(() => mergeDoc("payroll/" + mo, d, {}))) toast("Gaji " + monthLabel(mo) + " tersimpan: " + rp(d.bersih) + ". Beban gaji di laba-rugi ikut diperbarui.");
 }
 function modalSalary(id) {
   const s = salaryOf(id), st = S.staff[id];
   openModal(`<form data-submit="salary" data-id="${id}" class="modal" role="dialog" aria-label="Gaji"><div class="modal-h"><h2>Gaji · ${esc(st?.name || "")}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <div class="fgrid two"><label class="f">Gaji pokok per bulan<input name="pokok" type="number" min="0" step="10000" value="${s.pokok ?? ""}" required></label>
-    <label class="f">Potongan per hari absen<input name="potAbsen" type="number" min="0" step="1000" value="${s.potAbsen ?? ""}" placeholder="kosong = pokok ÷ 26"></label>
-    <label class="f">Potongan per kali telat<input name="potTelat" type="number" min="0" step="1000" value="${s.potTelat ?? ""}" placeholder="0 = tidak dipotong"></label></div>
+    <label class="f">Potongan per hari alpha<input name="potAbsen" type="number" min="0" step="1000" value="${s.potAbsen ?? ""}" placeholder="kosong = pokok ÷ 26"></label>
+    <label class="f">Potongan per menit telat<input name="potTelat" type="number" min="0" step="100" value="${s.potTelat ?? ""}" placeholder="kosong = ikut pengaturan (${rp(potMenitDefault())})"></label></div>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitSalary(f) {
-  const d = {pokok: num(f.pokok.value), potAbsen: f.potAbsen.value === "" ? "" : num(f.potAbsen.value), potTelat: num(f.potTelat.value), ts: Date.now(), by: S.me};
+  const d = {pokok: num(f.pokok.value), potAbsen: f.potAbsen.value === "" ? "" : num(f.potAbsen.value), potTelat: f.potTelat.value === "" ? "" : num(f.potTelat.value), ts: Date.now(), by: S.me};
   if (await guard(() => S.db.doc("salary/" + f.dataset.id).set(d))) { closeModal(); toast("Gaji tersimpan."); }
+}
+
+/* ===== PDF rekap & slip gaji ===== */
+let PDFLIB = null;
+function loadPdfLib() {
+  if (PDFLIB) return PDFLIB;
+  const add = src => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Gagal memuat " + src)); document.head.appendChild(s); });
+  PDFLIB = add("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js").then(() => add("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js")).catch(e => { PDFLIB = null; throw e; });
+  return PDFLIB;
+}
+const pdfRp = n => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
+function pdfHead(doc, title, sub) {
+  const W = doc.internal.pageSize.getWidth();
+  doc.setFillColor(115, 158, 201); doc.rect(0, 0, W, 18, "F");
+  doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text((S.settings.outlet || "Coffee Rouna").toUpperCase(), 12, 11.5);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("ROUNA OS · dicetak " + fdate(today()) + " " + ftime(Date.now()), W - 12, 11.5, {align: "right"});
+  doc.setTextColor(30); doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text(title, 12, 30);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90); doc.text(sub, 12, 36); doc.setTextColor(30);
+}
+async function payPdf() {
+  try { toast("Menyiapkan PDF…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
+  const mo = S.ui.finMonth, rows = payRows(mo), {jsPDF} = window.jspdf, doc = new jsPDF({orientation: "landscape", unit: "mm", format: "a4"});
+  pdfHead(doc, "Rekap Absensi & Gaji · " + monthLabel(mo), `Sesuai SOP: toleransi ${tolTelat()} menit/shift, telat diakumulasi bulanan. Potongan telat ${pdfRp(potMenitDefault())}/menit (kecuali diatur per orang). Alpha & sakit tanpa surat dipotong per hari.`);
+  const sum = f => rows.reduce((s, r) => s + f(r), 0);
+  doc.autoTable({startY: 41, styles: {fontSize: 7.5, cellPadding: 1.6}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
+    head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Telat dihitung", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok", "Pot. absen", "Pot. telat", "Kasbon", "Bonus", "Gaji bersih"]],
+    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.bon), pdfRp(r.net)]),
+    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.net))]],
+    footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold"},
+    columnStyles: {2: {halign: "right"}, 3: {halign: "right"}, 4: {halign: "right"}, 5: {halign: "right"}, 6: {halign: "right"}, 7: {halign: "right"}, 8: {halign: "right"}, 9: {halign: "right"}, 11: {halign: "right"}, 12: {halign: "right"}, 13: {halign: "right"}, 14: {halign: "right"}, 15: {halign: "right"}, 16: {halign: "right", fontStyle: "bold"}}});
+  let y = doc.lastAutoTable.finalY + 8; const P = pnl(mo);
+  doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text("Ke laporan keuangan", 12, y); doc.setFont("helvetica", "normal");
+  doc.text(`Beban gaji bersih ${monthLabel(mo)}: ${pdfRp(sum(r => r.net))}${P.rev ? ` · ${((sum(r => r.net)) / P.rev * 100).toFixed(1).replace(".", ",")}% dari pendapatan ${pdfRp(P.rev)}` : ""}`, 12, y + 5);
+  doc.text(`Total beban gaji karyawan di laba-rugi (termasuk kasbon, part-time, lembur, bonus yang tercatat di Pengeluaran): ${pdfRp(P.labor)}`, 12, y + 10);
+  doc.setTextColor(120); doc.text("Peringatan SOP: >100 mnt teguran lisan · >350 mnt SP1 tertulis · >450 mnt / 3x alpha SP3 · 2x alpha SP2.", 12, y + 16);
+  doc.save(`rekap-gaji-${mo}.pdf`); toast("PDF rekap diunduh.");
+}
+async function slipPdf(onlyId) {
+  try { toast("Menyiapkan slip…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
+  const mo = S.ui.finMonth, rows = payRows(mo).filter(r => !onlyId || r.id === onlyId); if (!rows.length) return toast("Belum ada staf.");
+  const {jsPDF} = window.jspdf, doc = new jsPDF({unit: "mm", format: "a4"});
+  rows.forEach((r, i) => {
+    if (i) doc.addPage();
+    const a = r.a;
+    pdfHead(doc, "Slip Gaji & Rekap Absensi", `${r.name} · ${ROLES[r.role]} · ${monthLabel(mo)}`);
+    doc.autoTable({startY: 41, theme: "plain", styles: {fontSize: 9, cellPadding: 1.4}, columnStyles: {1: {halign: "right"}},
+      body: [["Gaji pokok", pdfRp(r.pk)], [`(−) Alpha & sakit tanpa surat (${a.alpha + a.sakitTS} hari × ${pdfRp(r.pa)})`, pdfRp(r.potA)], [`(−) Keterlambatan (${a.telatHitung} menit dihitung × ${pdfRp(r.pm)})`, pdfRp(r.potT)], ["(−) Kasbon", pdfRp(r.kas)], ["(+) Bonus", pdfRp(r.bon)]],
+      foot: [["GAJI BERSIH", pdfRp(r.net)]], footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold", halign: "right"}});
+    const y = doc.lastAutoTable.finalY + 5;
+    doc.autoTable({startY: y, styles: {fontSize: 8.5, cellPadding: 1.4}, headStyles: {fillColor: [115, 158, 201], textColor: 255},
+      head: [["Shift dijadwalkan", "Hadir", "Jam kerja", "Telat", "Telat dihitung", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Lupa check-out", "Status SOP"]],
+      body: [[a.jadwal, a.hadir, fjam(a.jam), `${a.telat}x · ${a.telatMin} mnt`, a.telatHitung + " mnt", a.alpha, a.sakitTS, a.izin + a.cuti + a.sakit, a.lupaOut, a.sp[0]]]});
+    doc.autoTable({startY: doc.lastAutoTable.finalY + 5, styles: {fontSize: 7.5, cellPadding: 1.2}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
+      head: [["Tanggal", "Jadwal", "Masuk", "Pulang", "Jam kerja", "Telat", "Keterangan"]],
+      body: a.days.map(d => [fdate(d.date), d.k ? d.k + (d.label ? " · " + d.label : "") : "-", d.in ? ftime(d.in) : "-", d.out ? ftime(d.out) : "-", d.jam ? fjam(d.jam) : "-", d.late ? d.late + " mnt" : "-", d.status])});
+    const H = doc.internal.pageSize.getHeight(); doc.setFontSize(8); doc.setTextColor(110);
+    doc.text("Dibuat oleh Finance", 20, H - 30); doc.text("Diterima oleh " + r.name, 130, H - 30);
+    doc.line(20, H - 14, 80, H - 14); doc.line(130, H - 14, 190, H - 14); doc.setTextColor(30);
+  });
+  doc.save(onlyId ? `slip-${rows[0].name.replace(/\s+/g, "-").toLowerCase()}-${mo}.pdf` : `slip-gaji-${mo}.pdf`); toast("Slip diunduh.");
 }
 
 /* ===== Utang supplier ===== */
@@ -2760,10 +2872,11 @@ function viewNotifSettings() {
       ${tog("morning", "Ringkasan pagi · 07.45", "Penjualan kemarin vs target, closing, waste, stok menipis, order, utang jatuh tempo")}
       ${tog("midday", "Cek siang · 14.00", "Hanya dikirim bila ada stok habis atau order menunggu persetujuan")}
       ${tog("closing", "Pengingat closing · 23.15", "Hanya dikirim bila closing bar atau kitchen belum masuk")}</div></section>
-    <form class="panel" data-submit="shiftDefs"><h2>Jam shift</h2>
-      <div class="fgrid">${shiftDefs().map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d.k)}" maxlength="2" style="width:56px" aria-label="Kode"><input name="n${i}" value="${esc(d.n)}" maxlength="20" style="flex:1 1 120px" aria-label="Nama"><input name="s${i}" type="time" value="${d.s}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d.e}" style="width:auto" aria-label="Selesai"></div>`).join("")}
-      <div class="row"><input name="k3" placeholder="Kode" maxlength="2" style="width:56px"><input name="n3" placeholder="Shift tambahan (opsional)" maxlength="20" style="flex:1 1 120px"><input name="s3" type="time" style="width:auto"><input name="e3" type="time" style="width:auto"></div></div>
-      <label class="f" style="max-width:240px">Toleransi telat (menit)<input name="tol" type="number" min="0" max="120" value="${tolTelat()}"></label>
+    <form class="panel" data-submit="shiftDefs"><h2>Jam shift & aturan absensi</h2>
+      <p class="small muted" style="margin:0">Default mengikuti SOP General. Kode dipakai di Jadwal shift. Shift yang selesai tengah malam tulis 00:00.</p>
+      <div class="fgrid">${[...shiftDefs(), ...Array(Math.max(1, 9 - shiftDefs().length)).fill(null)].slice(0, 9).map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d?.k || "")}" maxlength="3" style="width:60px" placeholder="Kode" aria-label="Kode"><input name="n${i}" value="${esc(d?.n || "")}" maxlength="24" style="flex:1 1 120px" placeholder="${d ? "" : "Shift tambahan (opsional)"}" aria-label="Nama"><input name="s${i}" type="time" value="${d?.s || ""}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d?.e || ""}" style="width:auto" aria-label="Selesai"></div>`).join("")}</div>
+      <div class="fgrid two" style="max-width:640px"><label class="f">Toleransi telat per shift (menit)<input name="tol" type="number" min="0" max="120" value="${tolTelat()}"></label>
+      <label class="f">Potongan per menit telat (Rp)<input name="potMenit" type="number" min="0" step="100" value="${potMenitDefault() || ""}" placeholder="0 = tidak dipotong"></label></div>
       <div><button class="btn pri" type="submit">Simpan jam shift</button></div></form>`;
 }
 async function loadTg() { try { S.tg = await callFn("notify", {action: "status"}); } catch (e) { S.tg = {hasToken: false, chats: [], err: e.message}; } render(); }
@@ -2774,6 +2887,9 @@ const ACT2 = {
   copyWeek: () => copyWeek(),
   payPeopleSave: () => savePayPeople(),
   salEdit: b => modalSalary(b.dataset.id),
+  payDetail: b => modalPayDetail(b.dataset.id),
+  payPdf: () => payPdf(),
+  slipPdf: b => slipPdf(b.dataset.id || ""),
   invoice: () => modalInvoice(),
   payInv: b => modalPayInv(b.dataset.id),
   tgLink: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "link"}); toast(r.added.length ? "Terhubung: " + r.added.join(", ") : "Belum ada penerima baru. Pastikan sudah menekan Start di bot."); } catch (e) { toast(e.message); } loadTg(); },
@@ -2786,16 +2902,16 @@ const SUBMIT2 = {
   salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv,
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
-    const list = []; for (let i = 0; i < 4; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && k !== "L" && n && s && e) list.push({k, n, s, e}); }
+    const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
     if (!list.length) return toast("Isi minimal satu shift.");
-    if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value))}))) toast("Jam shift tersimpan.");
+    if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value)), potMenit: Math.max(0, num(f.potMenit.value))}))) toast("Jam shift tersimpan.");
   },
   waSet: async f => { const b = f.querySelector("button[type=submit]"); b.disabled = true; try { const r = await callFn("notify", {action: "waSet", token: f.token.value, targets: f.targets.value}); toast("Tersimpan: " + r.targets.length + " penerima. Klik Kirim pesan tes."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } },
   tgToken: async f => { const b = f.querySelector("button"); b.disabled = true; try { const r = await callFn("notify", {action: "setToken", token: f.token.value}); toast("Bot @" + r.bot + " terhubung."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } }
 };
 document.addEventListener("change", e => {
   const el = e.target;
-  if (el.dataset.shift) { el.className = "sh-sel sh-" + (el.value || "x"); saveShift(el.dataset.shift, el.dataset.sid, el.value); }
+  if (el.dataset.shift) { el.className = "sh-sel " + shCls(el.value); saveShift(el.dataset.shift, el.dataset.sid, el.value); }
   else if (el.dataset.pp) setPayPerson(el.dataset.sid, el.dataset.pp, el.value);
   else if (el.dataset.notif) guard(() => mergeDoc("settings/notify", {[el.dataset.notif]: el.checked}, {}));
   else if (el.name === "ord" && el.closest("form[data-submit=invoice]")) { const o = S.orders.find(x => x.id === el.value), f = el.form; if (o) { f.supplier.value = o.supplier || ""; f.amt.value = Math.round(orderTotal(o)); } }
@@ -3142,7 +3258,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016113646";
+const BUILD = "20261016114347";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
