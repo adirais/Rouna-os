@@ -313,7 +313,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 /* ---------- state ---------- */
 const S = {
   hints: lsGet("rouna_hints") === "1", shifts: [], salary: {}, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
-  items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
+  items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], olsmonth: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
   modal: null, ai: {}, pendingLogin: null
@@ -496,6 +496,7 @@ async function startData(session) {
   subscribe(S.db.collection("sales").orderBy("date", "desc").limit(120), "sales", listColl("sales"));
   subscribe(S.db.collection("attendance").orderBy("date", "desc").limit(62), "attendance", listColl("attendance"));
   subscribe(S.db.collection("daily").orderBy("date", "desc").limit(120), "daily", listColl("daily"));
+  subscribe(S.db.collection("olsmonth").orderBy("month", "desc").limit(24), "olsmonth", listColl("olsmonth"));
   if (["owner", "manager", "finance"].includes(r0.data)) {
     subscribe(S.db.collection("expenses").orderBy("month", "desc").limit(13), "expenses", listColl("expenses"));
     subscribe(S.db.collection("payroll"), "payroll", listColl("payroll"));
@@ -959,7 +960,7 @@ function viewClosing() {
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Closing harian</h1></div><div class="row"><button class="btn" data-act="waste">Catat waste</button></div></div>
   <div class="grid2">${areas.map(a => { const sh = cl?.shifts?.[a];
     if (sh) { const sp = Object.entries(sh.lines || {}).reduce((s, [id, l]) => s + (l.spoil || 0) * itemCost(id), 0);
-      return `<section class="panel"><div class="panel-h"><h2>${AREAS[a]}</h2><span class="chip ok">Selesai ${ftime(sh.ts)}</span></div><div class="small muted">Oleh ${esc(S.staff[sh.by]?.name || "-")} · spoil ${rp(sp)}</div>${closingSummary(sh)}</section>`; }
+      return `<section class="panel"><div class="panel-h"><h2>${AREAS[a]}</h2><span class="chip ok">Selesai ${ftime(sh.ts)}</span></div><div class="small muted">Oleh ${esc(S.staff[sh.by]?.name || (sh.by === "import" ? "impor Excel" : "-"))} · spoil ${rp(sp)}</div>${closingSummary(sh)}</section>`; }
     const n = itemsArr().filter(i => i.area === a).length;
     return `<section class="panel"><div class="panel-h"><h2>${AREAS[a]}</h2><span class="chip">Belum closing</span></div><p class="small muted" style="margin:0">Hitung sisa ${n} bahan di ${AREAS[a].toLowerCase()}, catat spoil dan alasannya. Sistem menghitung pemakaian riil dari selisihnya.</p><div><button class="btn pri" data-act="closing" data-a="${a}" ${n ? "" : "disabled"}>Mulai closing ${AREAS[a]}</button></div></section>`; }).join("")}</div>
   <section class="panel"><h2>Riwayat closing</h2>${hist.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Area</th><th class="r">Pemakaian (Rp)</th><th class="r">Spoil (Rp)</th><th class="r">Spoil %</th></tr></thead><tbody>
@@ -1016,6 +1017,7 @@ function viewSales() {
   <div class="alert acc"><div class="grow small"><b>Tiap hari unggah 2 PDF Olsera untuk tanggal kemarin</b> — pilih keduanya sekaligus: <b>1.</b> <i>Laporan Keseluruhan Penjualan</i> (pendapatan, CASH/QRIS, diskon, batal, HPP Olsera) dan <b>2.</b> <i>Penjualan berdasarkan SKU</i> (qty & harga modal semua produk → HPP ROUNA, analitik, cocok stok).</div></div>
   ${olsCompleteness()}
   ${dailyPanel()}
+  ${monthPanel()}
   ${!S.sales.length ? `<div class="empty"><b>Belum ada data penjualan per produk</b><span>Unggah PDF <i>Penjualan berdasarkan SKU</i> dari Olsera (atau export per produk CSV/Excel). Qty, total, dan harga modal tiap produk dikenali otomatis.</span></div>` : ""}
   <div class="grid2">
   <section class="panel"><h2>Data tersimpan</h2>${S.sales.length ? `<div class="list">${S.sales.slice(0, 30).map(s => `<div class="li"><div class="grow"><b>${fdate(s.date)}</b><span class="sub small muted">${(s.rows || []).length} produk · ${fq(s.qty)} terjual</span></div><span class="num">${rpk(s.total)}</span><button class="btn sm" data-act="ui" data-k="salesDay" data-v="${S.ui.salesDay === s.date ? "" : s.date}">${S.ui.salesDay === s.date ? "Tutup" : "Detail"}</button></div>`).join("")}</div>` : `<div class="small muted">-</div>`}</section>
@@ -1643,6 +1645,7 @@ function pnl(mo) {
   const cash = cashEntries(mo), daily = S.daily.filter(d => d.date.startsWith(mo)), sales = S.sales.filter(s => s.date.startsWith(mo));
   let rev, revDays, revSrc;
   if (cash.length) { rev = cash.reduce((s, c) => s + cashTotal(c), 0); revDays = new Set(cash.map(c => c.date)).size; revSrc = "Kas harian per shift"; }
+  else if (olsMonthOf(mo)?.daily?.pl?.revenue > daily.reduce((s, d) => s + (d.pl?.revenue || 0), 0)) { const om = olsMonthOf(mo); rev = +om.daily.pl.revenue || 0; revDays = omDays(om); revSrc = "Rekap bulanan Olsera"; }
   else if (daily.length) { rev = daily.reduce((s, d) => s + (d.pl?.revenue || 0), 0); revDays = daily.length; revSrc = "Laporan Olsera"; }
   else { rev = sales.reduce((s, x) => s + (x.total || 0), 0); revDays = sales.length; revSrc = sales.length ? "Penjualan per produk" : "Belum ada data"; }
   const ex = expEntries(mo), byCat = {}; ex.forEach(e => byCat[e.cat] = (byCat[e.cat] || 0) + (+e.amt || 0));
@@ -1658,7 +1661,7 @@ function pnl(mo) {
   const g = n => groups.find(x => x.g === n)?.total || 0;
   const elapsed = mo === today().slice(0, 7) ? +today().slice(8) : daysInMonth(mo);
   return {mo, rev, revDays, revSrc, cash, ex, byCat, groups, beban, saving, petty, laba, net, book, pr, payNet, use, waste, nClose: cls.length, stockIn, elapsed,
-    bb: g("Bahan Baku Murni"), vendor: g("Produk Vendor"), labor: g("Gaji Karyawan"), hppOls: daily.reduce((s, d) => s + (d.pl?.hpp || 0), 0)};
+    bb: g("Bahan Baku Murni"), vendor: g("Produk Vendor"), labor: g("Gaji Karyawan"), hppOls: revSrc === "Rekap bulanan Olsera" ? (+olsMonthOf(mo)?.daily?.pl?.hpp || 0) : daily.reduce((s, d) => s + (d.pl?.hpp || 0), 0)};
 }
 function finAudit(P) {
   const out = [], mo = P.mo;
@@ -1748,7 +1751,7 @@ function viewPnl(mo) {
       <div class="li"><div class="grow">Bahan terpakai menurut closing<span class="sub small muted">${P.nClose} hari closing · termasuk waste ${rp(P.waste)}</span></div><span class="num">${rp(P.use + P.waste)}</span></div>
       <div class="li"><div class="grow">Barang masuk tercatat di stok<span class="sub small muted">nilai nota barang masuk & order</span></div><span class="num">${rp(P.stockIn)}</span></div>
       <div class="li"><div class="grow">HPP menurut Olsera</div><span class="num">${rp(P.hppOls)}</span></div>
-      ${hppRounaRows(S.sales.filter(s => s.date.startsWith(P.mo)), P.rev, P.hppOls || null).replace("Unggah export penjualan per produk Olsera untuk tanggal ini", "Unggah export penjualan per produk Olsera bulan ini")}
+      ${hppRounaRows(salesForMonth(P.mo), P.rev, P.hppOls || null).replace("Unggah export penjualan per produk Olsera untuk tanggal ini", "Unggah export penjualan per produk Olsera bulan ini")}
       <div class="small muted">Laporan memakai basis kas: bahan baku dihitung saat dibayar. Bandingkan dengan pemakaian riil untuk melihat stok yang menumpuk atau bocor.</div>
     </div></section></div>`;
 }
@@ -3034,7 +3037,7 @@ const ACT2 = {
   tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
 };
 const SUBMIT2 = {
-  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(), docPic: submitDocPic,
+  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(), docPic: submitDocPic, olsMonth: () => submitOlsMonth(),
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
@@ -3069,7 +3072,7 @@ function hppRounaRows(list, base, olsHpp) {
   const h = hppRouna(list), part = base && h.rev < base * .9, den = part ? h.rev : (base || h.rev), gap = olsHpp != null && !part ? olsHpp - h.hpp : null;
   return `<div class="li"><span class="grow"><b>HPP versi ROUNA</b><span class="sub small muted">jumlah terjual × COGS resep · ${pct(den ? h.hpp / den : 0)} dari ${part ? "penjualan per produk" : "pendapatan"}</span></span><span class="num"><b>${rp(h.hpp)}</b></span></div>
     ${part ? `<div class="li"><span class="grow small" style="color:var(--warn)">Data per produk baru ${rp(h.rev)} dari pendapatan ${rp(base)} — belum bisa dibandingkan dengan Olsera<span class="sub small muted">Unggah export penjualan per produk yang lengkap untuk periode yang sama</span></span></div>` : ""}
-    ${gap != null ? `<div class="li"><span class="grow muted">Selisih Olsera − ROUNA<span class="sub small muted">${Math.abs(gap) > h.hpp * .05 ? "cek harga pokok produk di Olsera" : "masih wajar (≤5%)"}</span></span><span class="num" style="color:${Math.abs(gap) > h.hpp * .05 ? "var(--warn)" : "inherit"}">${rp(gap)}</span></div>` : ""}
+    ${gap != null ? `<div class="li"><span class="grow muted">Selisih Olsera − ROUNA<span class="sub small muted">${h.cov < .95 ? "belum sebanding — produk tanpa resep belum masuk HPP ROUNA" : Math.abs(gap) > h.hpp * .05 ? "cek harga pokok produk di Olsera" : "masih wajar (≤5%)"}</span></span><span class="num" style="color:${Math.abs(gap) > h.hpp * .05 ? "var(--warn)" : "inherit"}">${rp(gap)}</span></div>` : ""}
     ${(() => { const z = []; list.forEach(x => (x.rows || []).forEach(r => { if (r.modal === 0 && r.qty) { const c = recipeCost(r.name); if (c != null) z.push({name: r.name, v: c * r.qty}); } })); return z.length ? `<div class="li"><span class="grow small" style="color:var(--warn)">${z.length} produk harga modalnya 0 di Olsera — HPP Olsera kurang ± ${rp(z.reduce((s, x) => s + x.v, 0))} menurut resep<span class="sub small muted">Isi harga modal di back office Olsera: ${z.slice(0, 5).map(x => esc(x.name)).join(", ")}${z.length > 5 ? ", …" : ""}</span></span></div>` : ""; })()}
     ${h.missList.length ? `<div class="li"><span class="grow small" style="color:var(--warn)">${h.missList.length} produk belum punya resep (${pct(1 - h.cov)} penjualan) — HPP-nya belum terhitung<span class="sub small muted">${h.missList.slice(0, 5).map(m => esc(m.name)).join(", ")}${h.missList.length > 5 ? ", …" : ""}</span></span></div>` : ""}`;
 }
@@ -3167,8 +3170,65 @@ async function onOlseraFiles(files) {
   if (!P.daily && !P.sku) return openModal(`<div class="modal" role="dialog" aria-label="PDF tidak dikenali"><div class="modal-h"><h2>PDF belum bisa disimpan</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <div class="alert warn"><div class="grow small">${P.bad.map(esc).join("<br>")}</div></div>
     <p class="small muted" style="margin:0">Unggah PDF dari Olsera: <b>Laporan Keseluruhan Penjualan</b> dan <b>Penjualan berdasarkan SKU</b>, masing-masing untuk satu tanggal. Bila tetap gagal, kirim screenshot pesan ini.</p></div>`);
-  P.date = (P.daily || P.sku).start; PAIR = P; modalPair();
+  P.date = (P.daily || P.sku).start;
+  const rng = [P.daily, P.sku].filter(Boolean);
+  P.monthly = rng.some(x => x.start !== x.end);
+  P.month = P.date ? P.date.slice(0, 7) : "";
+  P.badRange = P.monthly && rng.some(x => !x.start || !x.end || x.start.slice(0, 7) !== P.month || x.end.slice(0, 7) !== P.month);
+  PAIR = P; P.monthly ? modalMonth() : modalPair();
 }
+/* ===== Rekap bulanan Olsera (laporan rentang >1 hari dalam satu bulan) ===== */
+const olsMonthOf = mo => (S.olsmonth || []).find(x => x.id === mo || x.month === mo) || null;
+function modalMonth() {
+  const P = PAIR, D = P.daily, K = P.sku, mo = P.month, had = olsMonthOf(mo) || {};
+  const tq = K ? K.rows.reduce((s, r) => s + r.qty, 0) : 0;
+  const clash = D && K && (D.start !== K.start || D.end !== K.end);
+  const rangeTxt = x => x ? `${fdate(x.start)} – ${fdate(x.end)}` : "";
+  const card = (title, sub, x, body, hadIt) => `<div class="kpi" style="gap:6px"><span class="eyebrow">${title}</span>${x ? `<span class="chip ok" style="justify-self:start">Siap disimpan · ${rangeTxt(x)}</span>${body}` : hadIt ? `<span class="chip ok" style="justify-self:start">Sudah tersimpan sebelumnya</span>` : `<span class="chip warn" style="justify-self:start">Belum diunggah</span>`}<span class="small muted">${sub}</span></div>`;
+  openModal(`<form data-submit="olsMonth" class="modal wide" role="dialog" aria-label="Rekap bulanan Olsera"><div class="modal-h"><h2>Rekap bulanan Olsera · ${mo ? monthLabel(mo) : "?"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${P.badRange ? `<div class="alert crit"><div class="grow">Rekap bulanan harus dalam <b>satu bulan</b> yang sama. Export ulang dari Olsera dengan tanggal 1 sampai akhir bulan (atau sampai hari ini).</div></div>` : ""}
+    ${clash ? `<div class="alert warn"><div class="grow small">Rentang tanggal kedua laporan berbeda: Keseluruhan ${rangeTxt(D)}, SKU ${rangeTxt(K)}. Tetap bisa disimpan, tapi angka keduanya tidak sebanding.</div></div>` : ""}
+    <div class="alert acc"><div class="grow small">Laporan ini mencakup lebih dari satu hari, jadi disimpan sebagai <b>rekap bulanan</b>. Angka ini dipakai di Laba-rugi, Kesehatan F&B, dan HPP versi ROUNA bila laporan harian bulan itu belum lengkap. Unggah ulang untuk memperbarui (menimpa rekap sebelumnya).</div></div>
+    <div class="grid2">
+      ${card("Keseluruhan Penjualan", "Pendapatan, HPP Olsera, diskon, pembayaran", D, D ? `<span class="v">${rpk(D.pl.revenue)}</span><span class="small muted">HPP Olsera ${pct(D.pl.revenue ? D.pl.hpp / D.pl.revenue : 0)} · ${esc(D.file)}</span>` : "", had.daily)}
+      ${card("Penjualan berdasarkan SKU", "Qty & harga modal semua produk", K, K ? `<span class="v">${K.rows.length} produk</span><span class="small muted">${fq(tq)} terjual · ${esc(K.file)}</span>` : "", had.sku)}</div>
+    ${P.bad.length ? `<div class="alert warn"><div class="grow small">${P.bad.map(esc).join("<br>")}</div></div>` : ""}
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" ${P.badRange || !mo ? "disabled" : ""}>Simpan rekap ${mo ? monthLabel(mo) : ""}</button></div></form>`);
+}
+async function submitOlsMonth() {
+  const P = PAIR; if (!P || !P.month) return;
+  const mo = P.month, patch = {month: mo, uploadedAt: Date.now(), by: S.me};
+  if (P.daily) { const R = P.daily; patch.daily = {start: R.start, end: R.end, outletName: R.outletName, pl: R.pl, channels: R.channels, discounts: R.discounts, discountTotal: R.discountTotal, loyalty: R.loyalty, cancelled: R.cancelled, categories: R.categories, catTotal: R.catTotal, catQty: R.catQty, top: R.top, payments: R.payments, cash: R.cash, file: R.file}; }
+  if (P.sku) { const R = P.sku, rows = R.rows.map(r => ({name: r.name, cat: r.cat, qty: r.qty, rev: r.rev, modal: r.modal, ...(r.variant ? {variant: r.variant} : {})})); patch.sku = {start: R.start, end: R.end, rows, total: rows.reduce((s, r) => s + r.rev, 0), qty: rows.reduce((s, r) => s + r.qty, 0), modal: rows.reduce((s, r) => s + r.modal, 0), file: R.file}; }
+  const cur = olsMonthOf(mo);
+  const doc = {...(cur || {}), ...patch}; delete doc.id;
+  if (await guard(() => S.db.doc("olsmonth/" + mo).set(doc))) { closeModal(); PAIR = null; S.ui.olsMo = mo; toast("Rekap " + monthLabel(mo) + " tersimpan."); }
+}
+const omDays = om => { const x = om?.daily || om?.sku; if (!x) return 0; const e = x.end > today() ? today() : x.end; return Math.max(1, Math.round((new Date(e + "T12:00") - new Date(x.start + "T12:00")) / 864e5) + 1); };
+function monthPanel() {
+  const list = [...(S.olsmonth || [])].sort((a, b) => (b.month || b.id).localeCompare(a.month || a.id));
+  if (!list.length) return "";
+  const sel = olsMonthOf(S.ui.olsMo || "") ;
+  return `<section class="panel"><h2>Rekap bulanan Olsera</h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Bulan</th><th>Periode</th><th class="r">Pendapatan</th><th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Produk</th><th></th></tr></thead><tbody>
+    ${list.map(m => { const mo = m.month || m.id, r = m.daily?.pl?.revenue || 0, x = m.daily || m.sku, h = m.sku ? hppRouna([m.sku]) : null; return `<tr><td><b>${monthLabel(mo)}</b></td><td class="small">${x ? fdate(x.start) + " – " + fdate(x.end > today() ? today() : x.end) : "-"}</td><td class="r num">${m.daily ? rp(r) : "-"}</td><td class="r num">${m.daily ? pct(r ? (m.daily.pl?.hpp || 0) / r : 0) : "-"}</td><td class="r num">${h ? pct((r || h.rev) ? h.hpp / (r || h.rev) : 0) + (h.missList.length ? ' <span class="chip warn" title="ada produk tanpa resep">!</span>' : "") : "-"}</td><td class="r num">${m.sku ? m.sku.rows.length : "-"}</td><td class="r"><button class="btn sm" data-act="ui" data-k="olsMo" data-v="${S.ui.olsMo === mo ? "" : mo}">${S.ui.olsMo === mo ? "Tutup" : "Detail"}</button></td></tr>`; }).join("")}</tbody></table></div>
+    ${sel ? monthDetail(sel) : ""}</section>`;
+}
+function monthDetail(m) {
+  const D = m.daily, K = m.sku, mo = m.month || m.id;
+  const rows = K ? [...K.rows].sort((a, b) => b.rev - a.rev) : [];
+  return `<div style="border-top:1px solid var(--line);padding-top:12px;display:grid;gap:12px">
+    ${D ? `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="kpi"><span class="eyebrow">Pendapatan</span><span class="v">${rpk(D.pl?.revenue)}</span><span class="small muted">${omDays(m)} hari</span></div>
+      <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${rpk(D.pl?.hpp)}</span><span class="small muted">${pct(D.pl?.revenue ? (D.pl?.hpp || 0) / D.pl.revenue : 0)}</span></div>
+      <div class="kpi"><span class="eyebrow">Diskon</span><span class="v">${rpk(D.discountTotal)}</span></div>
+      <div class="kpi"><span class="eyebrow">Pembayaran</span><span class="small">${Object.entries(D.payments || {}).map(([k, v]) => esc(k) + " " + rpk(v)).join("<br>")}</span></div></div>` : `<div class="small muted">Laporan Keseluruhan Penjualan ${monthLabel(mo)} belum diunggah.</div>`}
+    <div class="list">${K ? hppRounaRows([K], D?.pl?.revenue, D?.pl?.hpp) : `<div class="small muted">Laporan Penjualan berdasarkan SKU ${monthLabel(mo)} belum diunggah.</div>`}</div>
+    ${K ? `<div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th><th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Selisih</th><th>Resep</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(K, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div>` : ""}
+  </div>`;
+}
+
 function olsStatus(date) { return {daily: S.daily.some(d => d.date === date), sku: S.sales.some(s => s.date === date)}; }
 function modalPair() {
   const P = PAIR, D = P.daily, K = P.sku, date = P.date, had = olsStatus(date);
@@ -3315,6 +3375,13 @@ function donutSvg(parts, total, center, sub) {
 }
 function fnbDashboard(P) {
   if (!P.rev) return `<section class="panel"><h2>Kesehatan bisnis F&B</h2><div class="empty">Belum ada pendapatan bulan ini. Isi Kas shift atau unggah laporan Olsera.</div></section>`;
+  if (!P.ex.length && !P.payNet) { const hs = salesForMonth(P.mo), h = hs.length ? hppRouna(hs) : null;
+    return `<section class="panel"><div class="panel-h"><h2>Kesehatan bisnis F&B · ${monthLabel(P.mo)}</h2><span class="chip warn">Belum bisa dinilai</span></div>
+      <div class="alert warn"><div class="grow"><b>Pengeluaran ${monthLabel(P.mo)} belum dicatat</b><div class="small">Pendapatan sudah ada (${rp(P.rev)}, ${esc(P.revSrc)}), tapi belum ada pengeluaran maupun gaji bulan ini. Persentase sehat dihitung setelah pengeluaran diisi di Keuangan → Pengeluaran.</div></div></div>
+      <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${pct(P.rev ? P.hppOls / P.rev : 0)}</span><span class="small muted">${rp(P.hppOls)} · acuan 25–35%</span></div>
+        ${h ? `<div class="kpi"><span class="eyebrow">HPP versi ROUNA</span><span class="v">${pct(P.rev ? h.hpp / P.rev : 0)}</span><span class="small muted">${rp(h.hpp)}${h.missList.length ? ` · ${h.missList.length} produk tanpa resep` : ""}</span></div>` : ""}
+        <div class="kpi"><span class="eyebrow">Bahan terpakai (closing)</span><span class="v">${pct(P.rev ? (P.use + P.waste) / P.rev : 0)}</span><span class="small muted">${rp(P.use + P.waste)} · ${P.nClose} hari closing</span></div></div></section>`; }
   const B = fnbBuckets(P), r = P.rev, profit = {k: "laba", n: "Laba bersih", c: "#3E9E6A", v: Math.max(0, B.laba), p: B.lp};
   const parts = [...B.list, profit], total = B.laba >= 0 ? r : B.cost;
   const labaSt = B.lp >= 15 ? ["ok", "Sangat sehat"] : B.lp >= 10 ? ["ok", "Sehat"] : B.lp >= 5 ? ["warn", "Tipis"] : ["crit", B.lp < 0 ? "Rugi" : "Kurang"];
@@ -3341,6 +3408,12 @@ function fnbDashboard(P) {
     <div style="display:grid;gap:8px">${insights.map(([c, t, d]) => `<div class="alert ${c}"><div class="grow"><b>${t}</b><div class="small">${d}</div></div></div>`).join("")}</div>
     <p class="small muted" style="margin:0">Acuan umum industri kafe/restoran: HPP 25–35%, tenaga kerja 25–30%, prime cost ≤60%, sewa 6–10%, utility 3–5%, operasional 8–15%, laba bersih ≥10%. Laporan berbasis kas: biaya dihitung saat dibayar. Petty cash tidak dihitung karena hanya perpindahan kas.</p>
   </section>`;
+}
+/* penjualan per produk sebulan: harian bila lengkap, selain itu rekap bulanan */
+function salesForMonth(mo) {
+  const daily = S.sales.filter(s => s.date.startsWith(mo)), om = olsMonthOf(mo);
+  const dTot = daily.reduce((s, x) => s + (+x.total || 0), 0);
+  return om?.sku && dTot < (om.sku.total || 0) * 0.9 ? [om.sku] : daily;
 }
 
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
@@ -3686,7 +3759,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016152934";
+const BUILD = "20261016190954";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
