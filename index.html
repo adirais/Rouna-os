@@ -2305,7 +2305,8 @@ function modalAbsen() {
   openModal(`<form data-submit="absen" data-k="${kind}" data-date="${ad}" class="modal" role="dialog" aria-label="Absensi">
     <div class="modal-h"><h2>${kind === "in" ? "Check-in" : "Check-out"} · ${esc(me().name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
-    <div><span id="geo-status" class="chip">Mengambil lokasi…</span></div>
+    <div class="row"><span id="geo-status" class="chip">Mengambil lokasi…</span><button type="button" class="btn sm ghost" data-act="geoRetry">Ambil ulang lokasi</button></div>
+    <div id="geo-block" class="alert crit" hidden><div class="grow small"><b>Absen hanya bisa dilakukan di ${esc(S.settings.outlet || "Coffee Rouna")}.</b> Pastikan kamu di outlet, GPS/lokasi HP menyala dan browser diizinkan memakai lokasi, lalu tekan "Ambil ulang lokasi".</div></div>
     <label class="btn" for="selfie" style="justify-self:start;cursor:pointer">Ambil selfie</label>
     <input id="selfie" type="file" accept="image/*" capture="user" hidden>
     <img id="selfie-prev" class="selfie" alt="Pratinjau selfie" hidden>
@@ -2336,6 +2337,7 @@ function geoStatus() {
   if (GEO?.pending) { el.className = "chip"; el.textContent = "Mengambil lokasi…"; return; }
   const i = geoInfo(GEO); el.className = "chip " + (i.ok ? "ok" : i.ok === false ? "warn" : "");
   el.textContent = GEO?.err ? GEO.err + " — izinkan lokasi di browser" : i.txt + " (±" + GEO.acc + " m)";
+  updAbsenBtn();
 }
 const waitGeo = ms => new Promise(res => { const t0 = Date.now(); const k = () => (!GEO?.pending || Date.now() - t0 > ms) ? res() : setTimeout(k, 200); k(); });
 function loadTile(lat, lng, z) {
@@ -2397,6 +2399,15 @@ function attDate() {
   if (!mt?.in && my?.in && !my.out && Date.now() - my.in.ts < 20 * 36e5) return y;
   return t;
 }
+let LAST_FILE = null;
+const geoAllowed = () => !S.settings.geoRequired || !outletGeo() || geoInfo(GEO).ok === true;
+function updAbsenBtn() {
+  const b = $("#absen-go"), w = $("#geo-block"); if (!b) return;
+  const k = $("form[data-submit=absen]")?.dataset.k || "in", ok = geoAllowed();
+  b.disabled = !SELFIE || !!GEO?.pending || !ok;
+  b.textContent = GEO?.pending ? "Menunggu lokasi…" : !ok ? "Di luar lokasi outlet" : "Simpan " + (k === "in" ? "check-in" : "check-out");
+  if (w) w.hidden = ok || !!GEO?.pending;
+}
 let SELFIE = null;
 function shrink(file, size, q) {
   return new Promise((res, rej) => { const img = new Image(); const url = URL.createObjectURL(file);
@@ -2404,17 +2415,19 @@ function shrink(file, size, q) {
     img.onerror = rej; img.src = url; });
 }
 async function onSelfie(file) {
+  LAST_FILE = file;
   try {
     const small = await shrink(file, 160, .6), big = await shrink(file, 900, .8);
     const btnGo = $("#absen-go"); if (btnGo) { btnGo.disabled = true; btnGo.textContent = "Menunggu lokasi…"; }
     await waitGeo(8000); await stampCanvas(big, $("form[data-submit=absen]")?.dataset.k || "in");
     if (btnGo) btnGo.textContent = "Simpan " + (($("form[data-submit=absen]")?.dataset.k || "in") === "in" ? "check-in" : "check-out");
     SELFIE = {thumb: small.toDataURL("image/jpeg", .6), big: await new Promise(r => big.toBlob(r, "image/jpeg", .75))};
-    const p = $("#selfie-prev"); p.src = SELFIE.thumb.length ? URL.createObjectURL(SELFIE.big) : SELFIE.thumb; p.hidden = false; $("#absen-go").disabled = false;
+    const p = $("#selfie-prev"); p.src = SELFIE.thumb.length ? URL.createObjectURL(SELFIE.big) : SELFIE.thumb; p.hidden = false; updAbsenBtn();
   } catch (e) { toast("Foto tidak terbaca. Coba ambil ulang."); }
 }
 async function submitAbsen(form) {
   if (!SELFIE) return toast("Ambil selfie dulu.");
+  if (!geoAllowed()) return toast("Absen ditolak: kamu tidak berada di lokasi " + (S.settings.outlet || "Coffee Rouna") + ".");
   const k = form.dataset.k, btn = $("#absen-go"); btn.disabled = true; btn.textContent = "Menyimpan…";
   const rec = {ts: Date.now(), pic: SELFIE.thumb};
   if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
@@ -2448,7 +2461,9 @@ function viewSettings() {
         <p class="small muted" style="margin:0">Berdiri di dalam outlet lalu tekan tombol di bawah. Foto absen akan diberi stempel waktu, nama, koordinat, dan jarak dari outlet; absen di luar radius ditandai kuning.</p>
         <div class="row">${outletGeo() ? `<a class="chip ok" href="https://www.google.com/maps?q=${outletGeo().lat},${outletGeo().lng}" target="_blank" rel="noopener">📍 ${outletGeo().lat}, ${outletGeo().lng}</a>` : '<span class="chip warn">Belum diatur</span>'}
           <label class="row small" style="gap:6px">Radius <input id="geo-radius" type="number" min="20" max="1000" step="10" value="${outletGeo()?.radius || 100}" style="width:90px"> m</label>
-          <button class="btn" data-act="setGeo">${outletGeo() ? "Perbarui" : "Pakai"} lokasi saya sekarang</button></div></section>
+          <button class="btn" data-act="setGeo">${outletGeo() ? "Perbarui" : "Pakai"} lokasi saya sekarang</button></div>
+        ${outletGeo()?.src ? `<div class="small muted">Titik: ${esc(outletGeo().src)}</div>` : ""}
+        <label class="li" style="cursor:pointer" data-act="geoReq"><span class="grow"><b>Wajib absen di lokasi outlet</b><span class="sub small muted">${S.settings.geoRequired ? "Aktif: absen di luar radius atau tanpa izin lokasi ditolak dan tidak tersimpan." : "Nonaktif: absen di luar radius tetap tersimpan tapi ditandai kuning."}</span></span><input type="checkbox" tabindex="-1" ${S.settings.geoRequired ? "checked" : ""} style="width:auto;pointer-events:none"></label></section>
       <section class="panel"><h2>Data penjualan</h2><p class="small muted" style="margin:0">Tersimpan ${S.sales.length} hari. Hapus data lama jika kapasitas mulai penuh.</p><div><button class="btn danger" data-act="pruneSales">Hapus penjualan lebih dari 180 hari</button></div></section>`;
   }
   return `<div class="pagehead"><h1>Pengaturan</h1></div><div class="seg">${tabs.map(([k, l]) => `<button data-act="ui" data-k="setTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>${body}`;
@@ -3127,6 +3142,8 @@ const ACT = {
   logout: async () => { S.session = null; try { S.db?.close(); await SB.auth.signOut(); } catch (e) {} location.reload(); },
   more: () => { S.ui.more = !S.ui.more; render(); },
   setGeo: b => setOutletGeo(b),
+  geoRetry: async () => { startGeo(); await waitGeo(15000); if (LAST_FILE) onSelfie(LAST_FILE); },
+  geoReq: async b => { if (await guard(() => mergeDoc("settings/app", {geoRequired: !S.settings.geoRequired}, {}))) toast(S.settings.geoRequired ? "Absen di luar outlet sekarang diizinkan (ditandai kuning)." : "Absen sekarang wajib di lokasi outlet."); },
   goUtang: () => { S.view = "keuangan"; S.ui.finTab = "utang"; render(); },
   hints: () => { S.hints = !S.hints; lsSet("rouna_hints", S.hints ? "1" : null); document.body.classList.toggle("hints", S.hints); render(); toast(S.hints ? "Petunjuk ditampilkan." : "Petunjuk disembunyikan."); },
   moreBg: (b, e) => { if (e.target === b) { S.ui.more = false; render(); } },
@@ -3258,7 +3275,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016115407";
+const BUILD = "20261016115913";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
