@@ -230,7 +230,7 @@ body:not(.hints) main .panel > p.small.muted, body:not(.hints) .hint{display:non
 .sh-sel{width:52px;appearance:none;-webkit-appearance:none;cursor:pointer}
 .sh-P{background:#E2ECF6;border-color:#C5D8EC}.sh-S{background:#FFF9C4;border-color:#F2E88A}.sh-M{background:#E4E1F5;border-color:#CFC9EE}.sh-L{background:var(--sunk);color:var(--muted)}.sh-x{color:var(--muted)}
 .pay-tbl td,.pay-tbl th{white-space:nowrap}.pay-tbl tr.tot td{border-top:2px solid var(--line)}
-.pay-tbl input.cell-in{width:92px!important;text-align:right;padding:6px 8px!important}
+.pay-tbl input.cell-in{width:74px!important;text-align:right;padding:5px 6px!important}.pay-tbl th,.pay-tbl td{padding-left:6px;padding-right:6px}
 a.btn{text-decoration:none;color:inherit;display:inline-block}
 form[data-submit=shiftDefs] .fgrid{max-width:640px}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.linkbtn:hover b{color:var(--accent);text-decoration:underline}
@@ -2661,35 +2661,40 @@ const fjam = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + " 
 
 /* ===== Gaji per orang ===== */
 const salaryOf = sid => S.salary[sid] || {};
+const DIVISI = {headbar: "Bar", crew: "Bar", kitchen: "Kitchen", gudang: "Gudang", finance: "Finance", manager: "Manajemen", owner: "Owner"};
 function payRows(mo) {
   const saved = payrollOf(mo)?.people || {};
   return Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, s]) => {
     const sal = salaryOf(id), a = attStats(mo, id), pk = +sal.pokok || 0, pa = sal.potAbsen != null && sal.potAbsen !== "" ? +sal.potAbsen : Math.round(pk / 26);
     const pm = sal.potTelat != null && sal.potTelat !== "" ? +sal.potTelat : potMenitDefault();
-    const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0;
-    const potA = (a.alpha + a.sakitTS) * pa, potT = Math.round(a.telatHitung * pm), net = pk - kas - potA - potT + bon;
-    return {id, name: s.name, role: s.role, a, pk, pa, pm, kas, bon, potA, potT, net};
+    const tunj = +sal.tunjangan || 0, lr = +sal.lembur || 0;
+    const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0, lj = +sv.lemburJam || 0, pl = +sv.potLain || 0, ket = sv.ket || "";
+    const potA = (a.alpha + a.sakitTS) * pa, potT = Math.round(a.telatHitung * pm), lemb = Math.round(lj * lr);
+    const gross = pk + tunj + lemb + bon, pot = potA + potT + kas + pl, net = gross - pot;
+    return {id, name: s.name, role: s.role, div: sal.divisi || DIVISI[s.role] || "", via: sal.via || "", a, pk, pa, pm, tunj, lr, lj, lemb, kas, bon, pl, ket, potA, potT, gross, pot, net};
   });
 }
 function viewPayPeople(mo) {
   const rows = payRows(mo), saved = payrollOf(mo)?.people;
   const tot = k => rows.reduce((s, r) => s + r[k], 0);
   const noSal = rows.filter(r => !r.pk).length;
-  return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm" data-act="payPdf">Unduh rekap PDF</button><button class="btn sm" data-act="slipPdf">Unduh slip per orang</button><button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
+  return `<section class="panel"><div class="panel-h"><h2>Gaji per orang · ${monthLabel(mo)}</h2><div class="row">${saved ? `<span class="chip ok">Tersimpan</span>` : ""}<button class="btn sm" data-act="payPdf">Unduh rekap PDF</button><button class="btn sm" data-act="slipSet">Atur slip</button><button class="btn sm" data-act="slipPdf">Unduh semua slip</button><button class="btn sm pri" data-act="payPeopleSave">Simpan ke laporan</button></div></div>
     <p class="small muted" style="margin:0">Dihitung dari Jadwal shift dan absensi selfie sesuai SOP: toleransi ${tolTelat()} menit per shift, telat diakumulasi sebulan: toleransi = ${tolTelat()} menit × jumlah shift yang masuk; yang dipotong hanya kelebihannya × ${rp(potMenitDefault())}/menit. Alpha dan sakit tanpa surat dipotong per hari; telat dipotong per menit dihitung. Klik nama untuk rincian harian.</p>
     ${noSal ? `<div class="alert warn"><div class="grow small"><b>${noSal} staf</b> belum punya gaji pokok. Klik nama → Atur gaji.</div></div>` : ""}
-    <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Hadir/shift</th><th class="r">Jam kerja</th><th class="r">Telat</th><th class="r">Alpha / sakit TS</th><th>Status SOP</th><th class="r">Pokok</th><th class="r">Potongan</th><th class="r">Kasbon</th><th class="r">Bonus</th><th class="r">Bersih</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Hadir/shift</th><th class="r">Jam kerja</th><th class="r">Telat</th><th class="r">Alpha / sakit TS</th><th>Status SOP</th><th class="r">Pokok + tunj.</th><th class="r">Pot. absen/telat</th><th class="r">Lembur (jam)</th><th class="r">Bonus</th><th class="r">Kasbon</th><th class="r">Pot. lain</th><th class="r">Bersih</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td><button class="linkbtn" data-act="payDetail" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
       <td class="r num">${r.a.hadir}/${r.a.jadwal}${r.a.izin + r.a.cuti + r.a.sakit ? `<span class="sub">izin/cuti/sakit ${r.a.izin + r.a.cuti + r.a.sakit}</span>` : ""}</td>
       <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}</td>
       <td class="r num">${r.a.telatMin ? `${r.a.telatMin} mnt<span class="sub">toleransi ${r.a.tolBulan} · dipotong ${r.a.telatHitung}</span>` : "0"}</td>
       <td class="r num">${r.a.alpha + r.a.sakitTS ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}</span>` : "0"}</td>
       <td><span class="chip ${r.a.sp[1]}">${r.a.sp[0]}</span></td>
-      <td class="r num">${r.pk ? rp(r.pk) : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA + r.potT)}${r.potA && r.potT ? `<span class="sub">absen ${rpk(r.potA)} · telat ${rpk(r.potT)}</span>` : ""}</td>
-      <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.kas || ""}" data-pp="kasbon" data-sid="${r.id}" aria-label="Kasbon ${esc(r.name)}"></td>
+      <td class="r num">${r.pk ? rp(r.pk + r.tunj) + (r.tunj ? `<span class="sub">tunj. ${rpk(r.tunj)}</span>` : "") : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA + r.potT)}${r.potA && r.potT ? `<span class="sub">absen ${rpk(r.potA)} · telat ${rpk(r.potT)}</span>` : ""}</td>
+      <td class="r"><input class="cell-in num" type="number" min="0" step="0.5" value="${r.lj || ""}" data-pp="lemburJam" data-sid="${r.id}" aria-label="Jam lembur ${esc(r.name)}">${r.lemb ? `<span class="sub">${rpk(r.lemb)}</span>` : r.lj && !r.lr ? `<span class="sub" style="color:var(--warn)">tarif belum diatur</span>` : ""}</td>
       <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.bon || ""}" data-pp="bonus" data-sid="${r.id}" aria-label="Bonus ${esc(r.name)}"></td>
-      <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="11" class="muted">Belum ada staf aktif.</td></tr>`}
-    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${fjam(tot2(rows, r => r.a.jam))}</td><td class="r num">${tot2(rows, r => r.a.telatHitung)} mnt</td><td class="r num">${tot2(rows, r => r.a.alpha + r.a.sakitTS)}</td><td></td><td class="r num">${rp(tot("pk"))}</td><td class="r num">${rp(tot("potA") + tot("potT"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
+      <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.kas || ""}" data-pp="kasbon" data-sid="${r.id}" aria-label="Kasbon ${esc(r.name)}"></td>
+      <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.pl || ""}" data-pp="potLain" data-sid="${r.id}" aria-label="Potongan lain ${esc(r.name)}"></td>
+      <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="13" class="muted">Belum ada staf aktif.</td></tr>`}
+    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${fjam(tot2(rows, r => r.a.jam))}</td><td class="r num">${tot2(rows, r => r.a.telatHitung)} mnt</td><td class="r num">${tot2(rows, r => r.a.alpha + r.a.sakitTS)}</td><td></td><td class="r num">${rp(tot("pk") + tot("tunj"))}</td><td class="r num">${rp(tot("potA") + tot("potT"))}</td><td class="r num">${rpk(tot("lemb"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("pl"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
     </tbody></table></div></section>`;
 }
 const tot2 = (rows, f) => rows.reduce((s, r) => s + f(r), 0);
@@ -2703,35 +2708,45 @@ function modalPayDetail(id) {
       <div class="kpi"><span class="eyebrow">Status SOP</span><span class="v"><span class="chip ${a.sp[1]}">${a.sp[0]}</span></span><span class="small muted">pulang cepat ${a.pulangCepat} mnt</span></div></div>
     <div class="list">
       <div class="li"><span class="grow">Gaji pokok</span><span class="num">${rp(r.pk)}</span></div>
+      ${r.tunj ? `<div class="li"><span class="grow">(+) Tunjangan tetap</span><span class="num">${rp(r.tunj)}</span></div>` : ""}
+      <div class="li"><span class="grow">(+) Lembur<span class="sub small muted">${r.lj} jam × ${rp(r.lr)}</span></span><span class="num">${rp(r.lemb)}</span></div>
+      <div class="li"><span class="grow">(+) Bonus / insentif</span><span class="num">${rp(r.bon)}</span></div>
       <div class="li"><span class="grow">(−) Alpha & sakit tanpa surat<span class="sub small muted">${a.alpha + a.sakitTS} hari × ${rp(r.pa)}</span></span><span class="num">${rp(r.potA)}</span></div>
       <div class="li"><span class="grow">(−) Keterlambatan<span class="sub small muted">(${a.telatMin} − toleransi ${a.tolBulan}) = ${a.telatHitung} menit × ${rp(r.pm)}</span></span><span class="num">${rp(r.potT)}</span></div>
       <div class="li"><span class="grow">(−) Kasbon</span><span class="num">${rp(r.kas)}</span></div>
-      <div class="li"><span class="grow">(+) Bonus</span><span class="num">${rp(r.bon)}</span></div>
-      <div class="li"><span class="grow"><b>Gaji bersih</b></span><span class="num"><b>${rp(r.net)}</b></span></div></div>
+      <div class="li"><span class="grow">(−) Potongan lain</span><span class="num">${rp(r.pl)}</span></div>
+      <div class="li"><span class="grow"><b>Gaji bersih</b></span><span class="num"><b>${rp(r.net)}</b></span></div>
+      <label class="f" style="padding:8px 0 0">Catatan di slip (opsional)<input data-pp="ket" data-sid="${id}" maxlength="200" value="${esc(r.ket)}" placeholder="mis. potongan lain = ganti gelas pecah 12/9"></label></div>
     <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Jadwal</th><th class="r">Masuk</th><th class="r">Pulang</th><th class="r">Jam kerja</th><th class="r">Telat</th><th>Keterangan</th></tr></thead><tbody>
       ${a.days.map(d => `<tr><td>${fdate(d.date)}</td><td>${d.k ? `<span class="sh ${shCls(d.k)}">${d.k}</span>` : "–"}</td><td class="r num">${d.in ? ftime(d.in) : "–"}</td><td class="r num">${d.out ? ftime(d.out) : "–"}</td><td class="r num">${d.jam ? fjam(d.jam) : "–"}</td><td class="r num">${d.late ? d.late + " mnt" : "–"}</td><td class="small">${esc(d.status)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Belum ada jadwal atau absensi bulan ini.</td></tr>`}
     </tbody></table></div></div>`);
 }
 async function setPayPerson(sid, k, v) {
   const mo = S.ui.finMonth;
-  await guard(() => mergeDoc("payroll/" + mo, {people: {[sid]: {[k]: num(v)}}}, {month: mo}));
+  await guard(() => mergeDoc("payroll/" + mo, {people: {[sid]: {[k]: k === "ket" ? String(v).trim().slice(0, 200) : Math.max(0, num(v))}}}, {month: mo}));
 }
 async function savePayPeople() {
   const mo = S.ui.finMonth, rows = payRows(mo), sum = f => rows.reduce((s, r) => s + f(r), 0);
-  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, alpha: r.a.alpha, sakitTS: r.a.sakitTS, izin: r.a.izin, cuti: r.a.cuti, sakit: r.a.sakit, jam: +r.a.jam.toFixed(2), telat: r.a.telat, telatMin: r.a.telatMin, telatHitung: r.a.telatHitung, sp: r.a.sp[0], pokok: r.pk, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, bersih: r.net});
-  const d = {month: mo, n: rows.length, pokok: sum(r => r.pk), kasbon: sum(r => r.kas), potAbsen: sum(r => r.potA), potTelat: sum(r => r.potT), bonus: sum(r => r.bon), bersih: sum(r => r.net), people, src: "per orang", by: S.me, ts: Date.now()};
+  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, alpha: r.a.alpha, sakitTS: r.a.sakitTS, izin: r.a.izin, cuti: r.a.cuti, sakit: r.a.sakit, jam: +r.a.jam.toFixed(2), telat: r.a.telat, telatMin: r.a.telatMin, telatHitung: r.a.telatHitung, sp: r.a.sp[0], pokok: r.pk, tunjangan: r.tunj, lemburJam: r.lj, lembur: r.lemb, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, potLain: r.pl, ket: r.ket, bersih: r.net});
+  const d = {month: mo, n: rows.length, pokok: sum(r => r.pk), tunjangan: sum(r => r.tunj), lembur: sum(r => r.lemb), potLain: sum(r => r.pl), kasbon: sum(r => r.kas), potAbsen: sum(r => r.potA), potTelat: sum(r => r.potT), bonus: sum(r => r.bon), bersih: sum(r => r.net), people, src: "per orang", by: S.me, ts: Date.now()};
   if (await guard(() => mergeDoc("payroll/" + mo, d, {}))) toast("Gaji " + monthLabel(mo) + " tersimpan: " + rp(d.bersih) + ". Beban gaji di laba-rugi ikut diperbarui.");
 }
 function modalSalary(id) {
   const s = salaryOf(id), st = S.staff[id];
   openModal(`<form data-submit="salary" data-id="${id}" class="modal" role="dialog" aria-label="Gaji"><div class="modal-h"><h2>Gaji · ${esc(st?.name || "")}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <div class="fgrid two"><label class="f">Gaji pokok per bulan<input name="pokok" type="number" min="0" step="10000" value="${s.pokok ?? ""}" required></label>
+    <label class="f">Tunjangan tetap per bulan<input name="tunjangan" type="number" min="0" step="10000" value="${s.tunjangan ?? ""}" placeholder="mis. transport/makan, kosong = 0"></label>
     <label class="f">Potongan per hari alpha<input name="potAbsen" type="number" min="0" step="1000" value="${s.potAbsen ?? ""}" placeholder="kosong = pokok ÷ 26"></label>
-    <label class="f">Potongan per menit telat<input name="potTelat" type="number" min="0" step="100" value="${s.potTelat ?? ""}" placeholder="kosong = ikut pengaturan (${rp(potMenitDefault())})"></label></div>
+    <label class="f">Potongan per menit telat<input name="potTelat" type="number" min="0" step="100" value="${s.potTelat ?? ""}" placeholder="kosong = ikut pengaturan (${rp(potMenitDefault())})"></label>
+    <label class="f">Upah lembur per jam<input name="lembur" type="number" min="0" step="1000" value="${s.lembur ?? ""}" placeholder="kosong = 0"></label>
+    <label class="f">Divisi di slip<input name="divisi" maxlength="24" value="${esc(s.divisi || "")}" placeholder="${DIVISI[st?.role] || "mis. Bar"}"></label>
+    <label class="f">Dibayar melalui<input name="via" maxlength="40" value="${esc(s.via || "")}" placeholder="mis. Transfer BCA / Tunai"></label></div>
+    <p class="small muted" style="margin:0">Jam lembur diisi per bulan di tabel Gaji per orang. Jangan tulis nomor rekening di sini.</p>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitSalary(f) {
-  const d = {pokok: num(f.pokok.value), potAbsen: f.potAbsen.value === "" ? "" : num(f.potAbsen.value), potTelat: f.potTelat.value === "" ? "" : num(f.potTelat.value), ts: Date.now(), by: S.me};
+  const opt = k => f[k].value === "" ? "" : num(f[k].value);
+  const d = {pokok: num(f.pokok.value), tunjangan: opt("tunjangan"), potAbsen: opt("potAbsen"), potTelat: opt("potTelat"), lembur: opt("lembur"), divisi: f.divisi.value.trim(), via: f.via.value.trim(), ts: Date.now(), by: S.me};
   if (await guard(() => S.db.doc("salary/" + f.dataset.id).set(d))) { closeModal(); toast("Gaji tersimpan."); }
 }
 
@@ -2757,12 +2772,12 @@ async function payPdf() {
   const mo = S.ui.finMonth, rows = payRows(mo), {jsPDF} = window.jspdf, doc = new jsPDF({orientation: "landscape", unit: "mm", format: "a4"});
   pdfHead(doc, "Rekap Absensi & Gaji · " + monthLabel(mo), `Sesuai SOP: toleransi ${tolTelat()} menit × jumlah shift masuk per bulan; hanya kelebihan telat yang dipotong ${pdfRp(potMenitDefault())}/menit. Alpha & sakit tanpa surat dipotong per hari.`);
   const sum = f => rows.reduce((s, r) => s + f(r), 0);
-  doc.autoTable({startY: 41, styles: {fontSize: 6.8, cellPadding: 1.4}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
-    head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok", "Pot. absen", "Pot. telat", "Kasbon", "Bonus", "Gaji bersih"]],
-    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.tolBulan + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.bon), pdfRp(r.net)]),
-    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", "", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.net))]],
+  doc.autoTable({startY: 41, styles: {fontSize: 6.2, cellPadding: 1.2}, margin: {left: 8, right: 8}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
+    head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok+tunj.", "Lembur", "Bonus", "Pot. absen", "Pot. telat", "Kasbon", "Pot. lain", "Gaji bersih"]],
+    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.tolBulan + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk + r.tunj), pdfRp(r.lemb), pdfRp(r.bon), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.pl), pdfRp(r.net)]),
+    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", "", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk + r.tunj)), pdfRp(sum(r => r.lemb)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.pl)), pdfRp(sum(r => r.net))]],
     footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold"},
-    columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17].map(c => [c, c === 17 ? {halign: "right", fontStyle: "bold"} : {halign: "right"}]))});
+    columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19].map(c => [c, c === 19 ? {halign: "right", fontStyle: "bold"} : {halign: "right"}]))});
   let y = doc.lastAutoTable.finalY + 8; const P = pnl(mo);
   doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text("Ke laporan keuangan", 12, y); doc.setFont("helvetica", "normal");
   doc.text(`Beban gaji bersih ${monthLabel(mo)}: ${pdfRp(sum(r => r.net))}${P.rev ? ` · ${((sum(r => r.net)) / P.rev * 100).toFixed(1).replace(".", ",")}% dari pendapatan ${pdfRp(P.rev)}` : ""}`, 12, y + 5);
@@ -2770,29 +2785,86 @@ async function payPdf() {
   doc.setTextColor(120); doc.text("Peringatan SOP: >100 mnt teguran lisan · >350 mnt SP1 tertulis · >450 mnt / 3x alpha SP3 · 2x alpha SP2.", 12, y + 16);
   doc.save(`rekap-gaji-${mo}.pdf`); toast("PDF rekap diunduh.");
 }
+function terbilang(n) {
+  n = Math.floor(Math.abs(n));
+  const A = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  const t = x => x < 12 ? A[x] : x < 20 ? t(x - 10) + " belas" : x < 100 ? t(Math.floor(x / 10)) + " puluh " + t(x % 10) : x < 200 ? "seratus " + t(x - 100) : x < 1000 ? t(Math.floor(x / 100)) + " ratus " + t(x % 100) : x < 2000 ? "seribu " + t(x - 1000) : x < 1e6 ? t(Math.floor(x / 1000)) + " ribu " + t(x % 1000) : x < 1e9 ? t(Math.floor(x / 1e6)) + " juta " + t(x % 1e6) : t(Math.floor(x / 1e9)) + " miliar " + t(x % 1e9);
+  const r = t(n).replace(/\s+/g, " ").trim();
+  return r ? r.charAt(0).toUpperCase() + r.slice(1) + " rupiah" : "Nol rupiah";
+}
+let SLIP_LOGO;
+async function slipLogo() {
+  if (SLIP_LOGO !== undefined) return SLIP_LOGO;
+  try { const b = await (await fetch("assets/icon-192.png")).blob(); SLIP_LOGO = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(b); }); } catch (e) { SLIP_LOGO = null; }
+  return SLIP_LOGO;
+}
 async function slipPdf(onlyId) {
   try { toast("Menyiapkan slip…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
-  const mo = S.ui.finMonth, rows = payRows(mo).filter(r => !onlyId || r.id === onlyId); if (!rows.length) return toast("Belum ada staf.");
+  const mo = S.ui.finMonth, all = payRows(mo), rows = all.filter(r => !onlyId || r.id === onlyId); if (!rows.length) return toast("Belum ada staf.");
+  const st = S.settings, logo = await slipLogo();
+  const outlet = (st.outlet || "Rouna Coffee").toUpperCase(), alamat = st.slipAlamat || "Jl. H.I.A. Saleh Dg. Tompo No.4, Losari, Kec. Ujung Pandang, Kota Makassar, Sulawesi Selatan 90113";
+  const kota = st.slipKota || "Makassar", ttdJab = st.slipTtdJabatan || "Human Resources", ttdNama = st.slipTtdNama || "";
+  const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"], per = BULAN[+mo.slice(5) - 1] + " " + mo.slice(0, 4);
+  const tgl = daysInMonth(mo) + " " + per;
   const {jsPDF} = window.jspdf, doc = new jsPDF({unit: "mm", format: "a4"});
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), L = 18, R = W - 18, CW = R - L;
+  const BLUE = [115, 158, 201], BUTTER = [255, 245, 138], INK = [30, 30, 30], LINE = [30, 30, 30];
+  const n0 = v => Math.round(v || 0).toLocaleString("id-ID"), mnt = v => n0(v) + " menit", hr = v => n0(v) + " hari";
+  const tbl = (y, head, body, opt = {}) => { doc.autoTable(Object.assign({startY: y, margin: {left: opt.x ?? L, right: W - (opt.x ?? L) - (opt.w ?? CW)}, tableWidth: opt.w ?? CW, theme: "grid",
+    styles: {fontSize: 8.6, cellPadding: {top: 1.25, bottom: 1.25, left: 2, right: 2}, lineColor: LINE, lineWidth: 0.2, textColor: INK, font: "helvetica"},
+    headStyles: {fillColor: BLUE, textColor: INK, fontStyle: "bold"}, footStyles: {fillColor: [232, 240, 248], textColor: INK, fontStyle: "bold"},
+    columnStyles: {0: {fontStyle: "bold", cellWidth: (opt.w ?? CW) * (opt.split ?? 0.6)}, 1: {halign: "right"}}, head: head ? [[{content: head[0], colSpan: 2}]] : undefined, body}, opt.extra || {})); return doc.lastAutoTable.finalY; };
   rows.forEach((r, i) => {
     if (i) doc.addPage();
-    const a = r.a;
-    pdfHead(doc, "Slip Gaji & Rekap Absensi", `${r.name} · ${ROLES[r.role]} · ${monthLabel(mo)}`);
-    doc.autoTable({startY: 41, theme: "plain", styles: {fontSize: 9, cellPadding: 1.4}, columnStyles: {1: {halign: "right"}},
-      body: [["Gaji pokok", pdfRp(r.pk)], [`(−) Alpha & sakit tanpa surat (${a.alpha + a.sakitTS} hari × ${pdfRp(r.pa)})`, pdfRp(r.potA)], [`(−) Keterlambatan: total ${a.telatMin} mnt − toleransi ${a.tolBulan} mnt (${a.masuk} shift × ${tolTelat()}) = ${a.telatHitung} mnt × ${pdfRp(r.pm)}`, pdfRp(r.potT)], ["(−) Kasbon", pdfRp(r.kas)], ["(+) Bonus", pdfRp(r.bon)]],
-      foot: [["GAJI BERSIH", pdfRp(r.net)]], footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold", halign: "right"}});
-    const y = doc.lastAutoTable.finalY + 5;
-    doc.autoTable({startY: y, styles: {fontSize: 8.5, cellPadding: 1.4}, headStyles: {fillColor: [115, 158, 201], textColor: 255},
-      head: [["Shift dijadwalkan", "Hadir", "Jam kerja", "Telat", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Lupa check-out", "Status SOP"]],
-      body: [[a.jadwal, a.hadir, fjam(a.jam), `${a.telat}x · ${a.telatMin} mnt`, a.tolBulan + " mnt", a.telatHitung + " mnt", a.alpha, a.sakitTS, a.izin + a.cuti + a.sakit, a.lupaOut, a.sp[0]]]});
-    doc.autoTable({startY: doc.lastAutoTable.finalY + 5, styles: {fontSize: 7.5, cellPadding: 1.2}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
+    const a = r.a, no = "SG/" + mo.replace("-", "") + "/" + String(all.findIndex(x => x.id === r.id) + 1).padStart(3, "0");
+    // kop
+    doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.setFillColor(...BUTTER); doc.rect(L, 16, CW, 30, "FD");
+    if (logo) try { doc.addImage(logo, "PNG", L + 5, 21, 20, 20); } catch (e) {}
+    doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(outlet, W / 2, 26, {align: "center"});
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.2); doc.text(doc.splitTextToSize(alamat, 110), W / 2, 31.5, {align: "center"});
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.text("SLIP GAJI", R - 4, 22, {align: "right"}); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.text("No. " + no, R - 4, 26.5, {align: "right"});
+    // identitas
+    let y = tbl(46, null, [["NAMA", r.name, "PERIODE", per], ["DIVISI", r.div || "-", "TANGGAL BAYAR", tgl], ["JABATAN", ROLES[r.role] || "-", "DIBAYAR MELALUI", r.via || "-"]],
+      {extra: {styles: {fontSize: 8.6, cellPadding: {top: 1.25, bottom: 1.25, left: 2, right: 2}, lineColor: LINE, lineWidth: 0.2, textColor: INK}, columnStyles: {0: {fontStyle: "bold", cellWidth: 26}, 1: {cellWidth: CW / 2 - 26}, 2: {fontStyle: "bold", cellWidth: 34}, 3: {}}}});
+    // komponen tetap | keterlambatan & lembur
+    const half = (CW - 4) / 2, yA = y + 4;
+    const ya1 = tbl(yA, ["KOMPONEN GAJI", ""], [["Gaji Pokok", n0(r.pk)], ["Tunjangan Tetap", n0(r.tunj)], ["Total Hari Kerja (acuan)", "26"], ["Rate / Hari", n0(r.pa)], ["Rate / Jam Lembur", n0(r.lr)], ["Potongan / Menit Telat", n0(r.pm)]], {w: half, split: 0.62});
+    const ya2 = tbl(yA, ["TERLAMBAT & LEMBUR", ""], [["Telat total (sblm toleransi)", mnt(a.telatMin)], [`Toleransi (${a.masuk} shift x ${tolTelat()} mnt)`, mnt(a.tolBulan)], ["Telat dihitung", mnt(a.telatHitung)], ["Jam Lembur", n0(r.lj) + " jam"], ["Lupa Check-out", a.lupaOut + "x"], ["Status SOP", a.sp[0]]], {x: L + half + 4, w: half, split: 0.62});
+    // kehadiran
+    const yB = Math.max(ya1, ya2) + 4;
+    const yb1 = tbl(yB, ["KEHADIRAN (absensi ROUNA OS)", ""], [["Shift Dijadwalkan", n0(a.jadwal)], ["Total Shift Masuk", n0(a.masuk)], ["Total Jam Kerja", fjam(a.jam)], ["Masuk di luar jadwal", n0(a.tanpaJadwal)]], {w: half, split: 0.62});
+    const yb2 = tbl(yB, ["TIDAK MASUK", ""], [["Alpha (tanpa keterangan)", hr(a.alpha)], ["Sakit tanpa surat", hr(a.sakitTS)], ["Sakit dengan surat", hr(a.sakit)], ["Izin / Cuti", n0(a.izin) + " / " + n0(a.cuti) + " hari"]], {x: L + half + 4, w: half, split: 0.62});
+    y = Math.max(yb1, yb2);
+    // pendapatan & potongan berdampingan
+    const y0 = y + 4;
+    const y1 = tbl(y0, ["PENDAPATAN", ""], [["Gaji Pokok", n0(r.pk)], ["Tunjangan Tetap", n0(r.tunj)], ["Uang Lembur", n0(r.lemb)], ["Bonus / Insentif", n0(r.bon)]], {w: half, split: 0.58, extra: {foot: [["Total Pendapatan", n0(r.gross)]], footStyles: {fillColor: [232, 240, 248], textColor: INK, fontStyle: "bold", halign: "right"}}});
+    const y2 = tbl(y0, ["POTONGAN", ""], [["Potongan Absensi", n0(r.potA)], ["Potongan Terlambat", n0(r.potT)], ["Kasbon", n0(r.kas)], ["Potongan Lain", n0(r.pl)]], {x: L + half + 4, w: half, split: 0.58, extra: {foot: [["Total Potongan", n0(r.pot)]], footStyles: {fillColor: [232, 240, 248], textColor: INK, fontStyle: "bold", halign: "right"}}});
+    y = Math.max(y1, y2) + 4;
+    // gaji bersih
+    doc.setFillColor(...BLUE); doc.rect(L, y, CW, 10, "FD"); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...INK);
+    doc.text("GAJI BERSIH", L + 3, y + 6.6); doc.setFontSize(13); doc.text(pdfRp(r.net), R - 3, y + 6.8, {align: "right"});
+    y += 10; doc.rect(L, y, CW, 7); doc.setFont("helvetica", "italic"); doc.setFontSize(8.2); doc.text("Terbilang: " + (r.net < 0 ? "minus " : "") + terbilang(r.net), L + 3, y + 4.7);
+    y += 11; doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(70);
+    const notes = [`Cara hitung: Gaji bersih = Total pendapatan - Total potongan. Telat dihitung = telat total ${a.telatMin} - toleransi ${a.tolBulan} = ${a.telatHitung} menit (tidak kurang dari 0), dipotong Rp ${n0(r.pm)}/menit. Potongan absensi = (alpha + sakit tanpa surat) ${a.alpha + a.sakitTS} hari x Rp ${n0(r.pa)}. Uang lembur = ${n0(r.lj)} jam x Rp ${n0(r.lr)}.`];
+    if (r.ket) notes.push("Catatan: " + r.ket);
+    if (a.lupaOut) notes.push(`Ada ${a.lupaOut}x lupa check-out; jam kerja hari tersebut tidak dihitung.`);
+    notes.forEach(t => { const l = doc.splitTextToSize(t, CW); doc.text(l, L, y); y += l.length * 3.4 + 0.6; });
+    // tanda tangan
+    y = Math.min(Math.max(y + 8, H - 66), H - 50); doc.setTextColor(...INK); doc.setFontSize(9);
+    doc.text("Diterima oleh,", L + 2, y); doc.text(kota + ", " + tgl, R - 2, y, {align: "right"}); doc.text(ttdJab, R - 2, y + 5, {align: "right"});
+    doc.line(L + 2, y + 25, L + 62, y + 25); doc.line(R - 62, y + 25, R - 2, y + 25);
+    doc.setFont("helvetica", "bold"); doc.text(r.name, L + 2, y + 30); if (ttdNama) doc.text(ttdNama, R - 2, y + 30, {align: "right"});
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(120);
+    doc.text("Rahasia - hanya untuk karyawan yang bersangkutan. Dibuat oleh ROUNA OS, " + fdate(today()) + " " + ftime(Date.now()) + ". Rincian absensi harian di halaman berikutnya.", W / 2, H - 10, {align: "center"});
+    // lampiran rincian harian
+    doc.addPage(); doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Lampiran: Rincian Absensi Harian", L, 20);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(`${r.name} - ${r.div || ROLES[r.role]} - ${per} - No. ${no}`, L, 26);
+    doc.autoTable({startY: 30, margin: {left: L, right: L}, theme: "grid", styles: {fontSize: 7.8, cellPadding: 1.3, lineColor: [200, 200, 200], lineWidth: 0.15, textColor: INK}, headStyles: {fillColor: BLUE, textColor: INK, fontStyle: "bold"},
       head: [["Tanggal", "Jadwal", "Masuk", "Pulang", "Jam kerja", "Telat", "Keterangan"]],
-      body: a.days.map(d => [fdate(d.date), d.k ? d.k + (d.label ? " · " + d.label : "") : "-", d.in ? ftime(d.in) : "-", d.out ? ftime(d.out) : "-", d.jam ? fjam(d.jam) : "-", d.late ? d.late + " mnt" : "-", d.status])});
-    const H = doc.internal.pageSize.getHeight(); doc.setFontSize(8); doc.setTextColor(110);
-    doc.text("Dibuat oleh Finance", 20, H - 30); doc.text("Diterima oleh " + r.name, 130, H - 30);
-    doc.line(20, H - 14, 80, H - 14); doc.line(130, H - 14, 190, H - 14); doc.setTextColor(30);
+      body: a.days.map(d => [fdate(d.date), d.k ? d.k + (d.label ? " - " + d.label : "") : "-", d.in ? ftime(d.in) : "-", d.out ? ftime(d.out) : "-", d.jam ? fjam(d.jam) : "-", d.late ? d.late + " mnt" : "-", d.status.replace(/·/g, "-")]),
+      foot: [["Total", a.masuk + " shift", "", "", fjam(a.jam), a.telatMin + " mnt", `toleransi ${a.tolBulan} mnt, dihitung ${a.telatHitung} mnt`]], footStyles: {fillColor: [232, 240, 248], textColor: INK, fontStyle: "bold"}});
   });
-  doc.save(onlyId ? `slip-${rows[0].name.replace(/\s+/g, "-").toLowerCase()}-${mo}.pdf` : `slip-gaji-${mo}.pdf`); toast("Slip diunduh.");
+  doc.save(onlyId ? `slip-gaji-${rows[0].name.replace(/\s+/g, "-").toLowerCase()}-${mo}.pdf` : `slip-gaji-semua-${mo}.pdf`); toast("Slip diunduh.");
 }
 
 /* ===== Utang supplier ===== */
@@ -2906,6 +2978,12 @@ const ACT2 = {
   payDetail: b => modalPayDetail(b.dataset.id),
   payPdf: () => payPdf(),
   slipPdf: b => slipPdf(b.dataset.id || ""),
+  slipSet: () => openModal(`<form data-submit="slipSet" class="modal" role="dialog" aria-label="Pengaturan slip"><div class="modal-h"><h2>Pengaturan slip gaji</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f" style="grid-column:1/-1">Alamat di kop slip<input name="alamat" maxlength="160" value="${esc(S.settings.slipAlamat || "")}" placeholder="Jl. H.I.A. Saleh Dg. Tompo No.4, Losari, Kec. Ujung Pandang, Kota Makassar, Sulawesi Selatan 90113"></label>
+    <label class="f">Kota tanda tangan<input name="kota" maxlength="30" value="${esc(S.settings.slipKota || "")}" placeholder="Makassar"></label>
+    <label class="f">Jabatan penanda tangan<input name="jab" maxlength="40" value="${esc(S.settings.slipTtdJabatan || "")}" placeholder="Human Resources"></label>
+    <label class="f" style="grid-column:1/-1">Nama penanda tangan<input name="nama" maxlength="40" value="${esc(S.settings.slipTtdNama || "")}" placeholder="mis. Dewi Anggita"></label></div>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`),
   invoice: () => modalInvoice(),
   payInv: b => modalPayInv(b.dataset.id),
   tgLink: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "link"}); toast(r.added.length ? "Terhubung: " + r.added.join(", ") : "Belum ada penerima baru. Pastikan sudah menekan Start di bot."); } catch (e) { toast(e.message); } loadTg(); },
@@ -2922,6 +3000,7 @@ const SUBMIT2 = {
     if (!list.length) return toast("Isi minimal satu shift.");
     if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value)), potMenit: Math.max(0, num(f.potMenit.value))}))) toast("Jam shift tersimpan.");
   },
+  slipSet: async f => { if (await guard(() => mergeDoc("settings/app", {slipAlamat: f.alamat.value.trim(), slipKota: f.kota.value.trim(), slipTtdJabatan: f.jab.value.trim(), slipTtdNama: f.nama.value.trim()}, {}))) { closeModal(); toast("Pengaturan slip tersimpan."); } },
   waSet: async f => { const b = f.querySelector("button[type=submit]"); b.disabled = true; try { const r = await callFn("notify", {action: "waSet", token: f.token.value, targets: f.targets.value}); toast("Tersimpan: " + r.targets.length + " penerima. Klik Kirim pesan tes."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } },
   tgToken: async f => { const b = f.querySelector("button"); b.disabled = true; try { const r = await callFn("notify", {action: "setToken", token: f.token.value}); toast("Bot @" + r.bot + " terhubung."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } }
 };
@@ -3276,7 +3355,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016120146";
+const BUILD = "20261016121149";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
