@@ -243,6 +243,7 @@ code{background:var(--sunk);padding:1px 6px;border-radius:6px;font-size:.9em}
 .kpi-btn{text-align:left;cursor:pointer;font:inherit;color:inherit}
 .kpi-btn:hover{border-color:var(--brand)}
 
+[hidden]:not([hidden=until-found i]){display:none!important}
 .sh-SX{background:#F9E1DD;border-color:#EDB8AF;color:#8B2A20}.sh-C{background:#DFF1E6;border-color:#B9DEC6;color:#1E5C3A}
 </style>
 </head>
@@ -3275,7 +3276,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016115913";
+const BUILD = "20261016120146";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
