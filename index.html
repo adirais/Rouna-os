@@ -451,7 +451,7 @@ function listColl(key) { return snap => { S[key] = snap.docs.map(d => ({id: d.id
 
 async function boot() {
   if (!SB) { renderNoDb(); return; }
-  S.assets = {upload: async (blob, opt) => {
+  S.upl = {upload: async (blob, opt) => {
     const name = new Date().toISOString().slice(0, 7) + "/" + (crypto.randomUUID ? crypto.randomUUID() : uid() + uid()) + ".jpg";
     const {error} = await SB.storage.from("photos").upload(name, blob, {contentType: opt?.type || "image/jpeg", upsert: false});
     if (error) throw error;
@@ -891,6 +891,7 @@ function orderCard(o) {
     <div class="small muted">${tl}${o.note ? "<br>Catatan: " + esc(o.note) : ""}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Diminta</th>${o.status === "diterima" ? '<th class="r">Diterima</th>' : '<th class="r">Stok gudang</th>'}</tr></thead><tbody>
     ${(o.lines || []).map(l => { const it = S.items[l.itemId]; return `<tr><td>${esc(it?.name || "Bahan dihapus")}</td><td class="r num">${fq(l.qty)} ${esc(it?.unit || "")}</td><td class="r num">${o.status === "diterima" ? fq(l.recvQty) : fq(stockOf(l.itemId).gudang)}</td></tr>`; }).join("")}</tbody></table></div>
+    ${orderDocs(o)}
     ${acts.length ? `<div class="row" style="justify-content:flex-end">${acts.join("")}</div>` : ""}</section>`;
 }
 function modalOrder(preset) {
@@ -923,11 +924,14 @@ function modalPlace(o) {
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 function modalRecv(o) {
+  delete DOCPIC.inv;
   openModal(`<form data-submit="recv" data-id="${o.id}" class="modal" role="dialog" aria-label="Terima barang"><div class="modal-h"><h2>Terima barang</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Cek fisik barang. Ubah jumlah jika yang datang berbeda dari pesanan. Isi harga per satuan dari nota bila berubah.</p>
     <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Dipesan</th><th>Diterima</th><th>Rp/satuan</th></tr></thead><tbody>
     ${(o.lines || []).map((l, i) => { const it = S.items[l.itemId]; return `<tr><td>${esc(it?.name || "-")}</td><td class="r num">${fq(l.qty)} ${esc(it?.unit || "")}</td><td><input id="rc-${i}" name="r${i}" type="number" step="any" min="0" value="${l.qty}" style="width:90px"></td><td><input id="rp-${i}" name="p${i}" type="number" step="any" min="0" value="${it?.cost || ""}" style="width:110px"></td></tr>`; }).join("")}
     </tbody></table></div>
+    <div class="fgrid two"><label class="f">No. invoice / nota supplier<input name="invno" maxlength="40" placeholder="opsional"></label><div class="f"><span>Foto invoice / nota</span>${picField("inv", "Foto invoice")}</div></div>
+    <p class="small muted" style="margin:0">Foto invoice langsung masuk ke Finance (Keuangan → Utang) untuk dibayar.</p>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Masukkan ke gudang</button></div></form>`);
 }
 async function submitRecv(form) {
@@ -940,7 +944,8 @@ async function submitRecv(form) {
       if (l.recvQty > 0) { await setStock(l.itemId, {gudang: (stockOf(l.itemId).gudang || 0) + l.recvQty}); log.push({t: "order", itemId: l.itemId, qty: l.recvQty, note: o.supplier || "order", price: l.price}); }
       const p = num(form["p" + i].value); if (p > 0 && p !== +S.items[l.itemId].cost) { await logPrice(l.itemId, p, "order" + (o.supplier ? " · " + o.supplier : "")); await S.db.doc("items/" + l.itemId).update({cost: p}); }
     }
-    await S.db.doc("orders/" + o.id).update({status: "diterima", lines, receivedAt: Date.now(), receivedBy: S.me});
+    const invUrl = await upDocPic("inv"), invNo = (form.invno?.value || "").trim();
+    await S.db.doc("orders/" + o.id).update({status: "diterima", lines, receivedAt: Date.now(), receivedBy: S.me, ...(invUrl || invNo ? {invoice: {no: invNo, photo: invUrl || "", at: Date.now(), by: S.me}} : {})});
     await logMoves(log);
   });
   if (ok) { closeModal(); toast("Barang masuk gudang. Stok diperbarui."); }
@@ -1944,7 +1949,7 @@ async function onSopPhoto(file, prevId) {
 }
 async function picUpload() {
   if (!SOPPIC) return null; const ph = {pic: SOPPIC.thumb};
-  if (S.assets && SOPPIC.big) { try { const up = await S.assets.upload(SOPPIC.big, {type: "image/jpeg"}); ph.asset = up.id; delete ph.pic; } catch (e) { console.warn(e); } }
+  if (S.upl && SOPPIC.big) { try { const up = await S.upl.upload(SOPPIC.big, {type: "image/jpeg"}); ph.asset = up.id; delete ph.pic; } catch (e) { console.warn(e); } }
   return ph;
 }
 async function submitSop(form) {
@@ -2442,7 +2447,7 @@ async function submitAbsen(form) {
   const k = form.dataset.k, btn = $("#absen-go"); btn.disabled = true; btn.textContent = "Menyimpan…";
   const rec = {ts: Date.now(), pic: SELFIE.thumb};
   if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
-  if (S.assets && SELFIE.big) { try { const up = await S.assets.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
+  if (S.upl && SELFIE.big) { try { const up = await S.upl.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
   const ad = form.dataset.date || today();
   const ok = await guard(() => mergeDoc("attendance/" + ad, {rec: {[S.me]: {[k]: rec}}}, {date: ad}));
   if (ok) { SELFIE = null; closeModal(); toast(k === "in" ? "Check-in tercatat " + ftime(rec.ts) : "Check-out tercatat " + ftime(rec.ts)); }
@@ -2890,44 +2895,58 @@ function viewPayables() {
   const done = S.payables.filter(p => !p.void && !open.includes(p)).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 20);
   const sisa = p => (+p.amt || 0) - paidOf(p), sum = arr => arr.reduce((s, p) => s + sisa(p), 0);
   const late = open.filter(p => p.due && p.due < t), soon = open.filter(p => p.due && p.due >= t && p.due <= addDays(t, 7));
-  const row = p => `<div class="li"><div class="grow"><b>${esc(p.supplier || "-")}</b> ${dueTag(p)}<span class="sub small muted">${esc(p.inv || "tanpa nomor")} · ${fdate(p.date)}${paidOf(p) ? ` · dibayar ${rp(paidOf(p))}` : ""}${p.note ? " · " + esc(p.note) : ""}</span></div>
-    <div class="r"><div class="num"><b>${rp(sisa(p))}</b></div>${sisa(p) > 1 ? `<button class="btn sm" data-act="payInv" data-id="${p.id}">Bayar</button>` : `<span class="chip ok">Lunas</span>`}</div></div>`;
+  const row = p => `<div class="li" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.supplier || "-")}</b> ${dueTag(p)}<span class="sub small muted">${esc(p.inv || "tanpa nomor")} · ${fdate(p.date)}${paidOf(p) ? ` · dibayar ${rp(paidOf(p))}` : ""}${p.note ? " · " + esc(p.note) : ""}</span></div>
+    <div class="r"><div class="num"><b>${rp(sisa(p))}</b></div>${sisa(p) > 1 ? `<button class="btn sm" data-act="payInv" data-id="${p.id}">Bayar</button>` : `<span class="chip ok">Lunas</span>`}</div>
+    ${payDocs(p)}</div>`;
   return `<div class="grid3">
     <div class="kpi"><span class="eyebrow">Utang terbuka</span><span class="v">${rpk(sum(open))}</span><span class="small muted">${open.length} invoice</span></div>
     <div class="kpi"><span class="eyebrow">Lewat jatuh tempo</span><span class="v" style="color:${late.length ? "var(--crit)" : "inherit"}">${rpk(sum(late))}</span><span class="small muted">${late.length} invoice</span></div>
     <div class="kpi"><span class="eyebrow">Jatuh tempo 7 hari</span><span class="v">${rpk(sum(soon))}</span><span class="small muted">${soon.length} invoice</span></div>
     <div class="kpi"><span class="eyebrow">Order diterima belum ditagih</span><span class="v">${unbilledOrders().length}</span><span class="small muted">order</span></div></div>
+  ${(() => { const ub = unbilledOrders(); return ub.length ? `<section class="panel"><div class="panel-h"><h2>Invoice dari penerimaan barang</h2><span class="chip warn">${ub.length} belum dicatat</span></div><div class="list">${ub.map(o => `<div class="li" style="flex-wrap:wrap"><div class="grow"><b>${esc(o.supplier || "Tanpa supplier")}</b><span class="sub small muted">Diterima ${fdt(o.receivedAt)}${S.staff[o.receivedBy] ? " oleh " + esc(S.staff[o.receivedBy].name) : ""}${o.invoice?.no ? " · No. " + esc(o.invoice.no) : ""} · ± ${rp(orderTotal(o))}</span></div><div class="row">${o.invoice?.photo ? photoBtns(o.invoice.photo, docName("invoice", o.supplier, o.invoice.no || fdateIso(o.receivedAt))) : `<span class="chip warn">Belum ada foto invoice</span>`}<button class="btn sm pri" data-act="invoice" data-id="${o.id}">Catat utang</button></div></div>`).join("")}</div></section>` : ""; })()}
   <section class="panel"><div class="panel-h"><h2>Belum dibayar</h2></div>${open.length ? `<div class="list">${open.map(row).join("")}</div>` : `<div class="empty">Tidak ada utang terbuka.</div>`}</section>
   ${done.length ? `<section class="panel"><h2>Lunas terakhir</h2><div class="list">${done.map(row).join("")}</div></section>` : ""}`;
 }
 const orderTotal = o => (o.lines || []).reduce((s, l) => s + (+(l.recvQty ?? l.qty) || 0) * (+l.price || +S.items[l.itemId]?.cost || 0), 0);
 const unbilledOrders = () => S.orders.filter(o => o.status === "diterima" && !S.payables.some(p => p.orderId === o.id && !p.void));
 function modalInvoice(orderId) {
+  delete DOCPIC.pinv;
   const o = orderId ? S.orders.find(x => x.id === orderId) : null, sups = [...new Set([...itemsArr().map(i => i.supplier), ...S.payables.map(p => p.supplier)].filter(Boolean))].sort();
   const ub = unbilledOrders();
   openModal(`<form data-submit="invoice" data-order="${o ? o.id : ""}" class="modal" role="dialog" aria-label="Invoice supplier"><div class="modal-h"><h2>Catat invoice supplier</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     ${ub.length && !o ? `<label class="f">Dari order yang sudah diterima<select name="ord" data-act-change="invFromOrder"><option value="">Tidak, isi manual</option>${ub.map(x => `<option value="${x.id}">${esc(x.supplier || "Tanpa supplier")} · ${fdate(new Date(x.receivedAt || x.createdAt).toISOString().slice(0, 10))} · ${rp(orderTotal(x))}</option>`).join("")}</select></label>` : ""}
     <div class="fgrid two"><label class="f">Supplier<input name="supplier" list="suplist" required maxlength="60" value="${esc(o?.supplier || "")}"></label><datalist id="suplist">${sups.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
-    <label class="f">No. invoice / nota<input name="inv" maxlength="40"></label>
+    <label class="f">No. invoice / nota<input name="inv" maxlength="40" value="${esc(o?.invoice?.no || "")}"></label>
     <label class="f">Tanggal invoice<input name="date" type="date" value="${today()}" required></label>
     <label class="f">Jatuh tempo<input name="due" type="date" value="${addDays(today(), 14)}"></label>
     <label class="f">Jumlah tagihan (Rp)<input name="amt" type="number" min="0" step="any" required value="${o ? Math.round(orderTotal(o)) : ""}"></label>
     <label class="f">Kategori biaya saat dibayar<select name="cat">${EXP_CATS.filter(c => !["Saving", "Petty Cash", "Gaji"].includes(c)).map(c => `<option ${c === "BB Bar" ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
     <label class="f">Catatan<input name="note" maxlength="120"></label>
+    ${o?.invoice?.photo ? `<div class="row small"><span class="chip ok">Foto invoice dari penerimaan barang terlampir</span>${photoBtns(o.invoice.photo, docName("invoice", o.supplier, o.invoice.no))}</div>` : picField("pinv", "Foto invoice / nota")}
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitInvoice(f) {
   const amt = num(f.amt.value); if (!(amt > 0)) return toast("Isi jumlah tagihan.");
   const id = uid(), d = {supplier: f.supplier.value.trim(), inv: f.inv.value.trim(), date: f.date.value, due: f.due.value, amt, cat: f.cat.value, note: f.note.value.trim(), orderId: f.dataset.order || f.ord?.value || "", paid: {}, by: S.me, ts: Date.now()};
-  if (await guard(() => S.db.doc("payables/" + id).set(d))) { closeModal(); toast("Invoice tercatat."); }
+  const btn = f.querySelector("[type=submit]"); btn.disabled = true;
+  const ok = await guard(async () => {
+    const o = d.orderId ? S.orders.find(x => x.id === d.orderId) : null;
+    d.photo = (await upDocPic("pinv")) || o?.invoice?.photo || "";
+    if (!d.inv && o?.invoice?.no) d.inv = o.invoice.no;
+    await S.db.doc("payables/" + id).set(d);
+  });
+  if (ok) { closeModal(); toast("Invoice tercatat."); } else btn.disabled = false;
 }
 function modalPayInv(id) {
   const p = S.payables.find(x => x.id === id); if (!p) return;
   const sisa = (+p.amt || 0) - paidOf(p);
+  delete DOCPIC.proof;
   openModal(`<form data-submit="payInv" data-id="${id}" class="modal" role="dialog" aria-label="Bayar invoice"><div class="modal-h"><h2>Bayar ${esc(p.supplier)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <div class="fgrid two"><label class="f">Tanggal bayar<input name="date" type="date" value="${today()}" required></label><label class="f">Jumlah (Rp)<input name="amt" type="number" min="0" step="any" value="${Math.round(sisa)}" required></label>
     <label class="f">Metode<select name="pay">${PAY_METHODS.map(m => `<option>${m}</option>`).join("")}</select></label>
     <label class="f">Kategori biaya<select name="cat">${EXP_CATS.filter(c => !["Saving", "Petty Cash", "Gaji"].includes(c)).map(c => `<option ${c === (p.cat || "BB Bar") ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+    ${p.photo ? `<div class="row small"><span class="muted">Invoice:</span>${photoBtns(p.photo, docName("invoice", p.supplier, p.inv))}</div>` : ""}
+    ${picField("proof", "Foto bukti bayar")}
     <label class="row small" style="gap:8px"><input type="checkbox" name="exp" checked style="width:auto"> Catat juga di Pengeluaran (masuk laba-rugi bulan pembayaran)</label>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan pembayaran</button></div></form>`);
 }
@@ -2935,10 +2954,15 @@ async function submitPayInv(f) {
   const p = S.payables.find(x => x.id === f.dataset.id); if (!p) return;
   const amt = num(f.amt.value), date = f.date.value || today(), mo = date.slice(0, 7), pid = uid(), expId = f.exp.checked ? uid() : "";
   if (!(amt > 0)) return toast("Isi jumlah.");
+  if (!DOCPIC.proof && !f.dataset.noproof) { f.dataset.noproof = "1"; return toast("Belum ada foto bukti bayar. Tekan Simpan sekali lagi untuk tetap menyimpan tanpa bukti."); }
+  const btn = f.querySelector("[type=submit]"); btn.disabled = true;
   const ok = await guard(async () => {
-    if (expId) await mergeDoc("expenses/" + mo, {rec: {[expId]: {date, cat: f.cat.value, amt, pay: f.pay.value, note: "Bayar invoice " + (p.inv || "") + (p.note ? " · " + p.note : ""), to: p.supplier, payable: p.id, by: S.me, ts: Date.now()}}}, {month: mo});
-    await mergeDoc("payables/" + p.id, {paid: {[pid]: {date, amt, pay: f.pay.value, expId, by: S.me, ts: Date.now()}}}, {});
+    const proof = (await upDocPic("proof")) || "";
+    if (expId) await mergeDoc("expenses/" + mo, {rec: {[expId]: {date, cat: f.cat.value, amt, pay: f.pay.value, note: "Bayar invoice " + (p.inv || "") + (p.note ? " · " + p.note : ""), to: p.supplier, payable: p.id, ...(proof ? {proof} : {}), by: S.me, ts: Date.now()}}}, {month: mo});
+    await mergeDoc("payables/" + p.id, {paid: {[pid]: {date, amt, pay: f.pay.value, expId, ...(proof ? {proof} : {}), by: S.me, ts: Date.now()}}}, {});
+    if (p.orderId && S.orders.some(o => o.id === p.orderId)) await mergeDoc("orders/" + p.orderId, {pays: {[pid]: {date, amt, ...(proof ? {proof} : {}), by: S.me}}}, {});
   });
+  if (!ok) btn.disabled = false;
   if (ok) { closeModal(); toast("Pembayaran tercatat" + (expId ? " dan masuk Pengeluaran." : ".")); }
 }
 
@@ -2994,7 +3018,11 @@ const ACT2 = {
     <label class="f">Jabatan penanda tangan<input name="jab" maxlength="40" value="${esc(S.settings.slipTtdJabatan || "")}" placeholder="Human Resources"></label>
     <label class="f" style="grid-column:1/-1">Nama penanda tangan<input name="nama" maxlength="40" value="${esc(S.settings.slipTtdNama || "")}" placeholder="mis. Dewi Anggita"></label></div>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`),
-  invoice: () => modalInvoice(),
+  invoice: b => modalInvoice(b.dataset.id || ""),
+  dlPhoto: b => dlPhoto(b.dataset.url, b.dataset.name),
+  ordInv: b => modalDocPic("ord", b.dataset.id),
+  addInvPic: b => modalDocPic("pinv", b.dataset.id),
+  addProof: b => modalDocPic("proof", b.dataset.id, b.dataset.k),
   payInv: b => modalPayInv(b.dataset.id),
   tgLink: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "link"}); toast(r.added.length ? "Terhubung: " + r.added.join(", ") : "Belum ada penerima baru. Pastikan sudah menekan Start di bot."); } catch (e) { toast(e.message); } loadTg(); },
   waTest: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "waTest"}); toast("Pesan tes terkirim ke " + r.sent + " nomor. Cek WhatsApp."); } catch (e) { toast(e.message); } b.disabled = false; },
@@ -3003,7 +3031,7 @@ const ACT2 = {
   tgSend: async b => { b.disabled = true; try { const r = await callFn("notify", {action: "send", kind: b.dataset.k}); toast(r.sent ? "Terkirim ke " + r.sent + " penerima." : "Tidak terkirim. Cek penerima."); } catch (e) { toast(e.message); } b.disabled = false; }
 };
 const SUBMIT2 = {
-  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(),
+  salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(), docPic: submitDocPic,
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
@@ -3196,6 +3224,64 @@ function crewHome() {
   </section>
   ${viewGuide()}`;
 }
+
+
+/* ===== Foto invoice & bukti bayar ===== */
+const DOCPIC = {};
+const picField = (k, label) => `<div class="row"><label class="btn sm" style="cursor:pointer">${label}<input type="file" accept="image/*" data-docpic="${k}" hidden></label><img id="dp-${k}" class="thumb" style="width:56px;height:56px;object-fit:cover;border-radius:8px" alt="Pratinjau" hidden><span class="small muted">Foto dari kamera atau galeri</span></div>`;
+async function onDocPic(el) {
+  const f = el.files && el.files[0], k = el.dataset.docpic; if (!f) return;
+  try { const big = await shrink(f, 1800, .82), small = await shrink(f, 200, .6);
+    DOCPIC[k] = {blob: await new Promise(r => big.toBlob(r, "image/jpeg", .82)), thumb: small.toDataURL("image/jpeg", .6)};
+    const pv = document.getElementById("dp-" + k); if (pv) { pv.src = DOCPIC[k].thumb; pv.hidden = false; }
+  } catch (e) { toast("Foto tidak terbaca. Coba foto ulang."); }
+}
+async function upDocPic(k) { const d = DOCPIC[k]; if (!d) return null; const up = await S.upl.upload(d.blob, {type: "image/jpeg"}); delete DOCPIC[k]; return up.id; }
+const fdateIso = ts => ts ? new Date(ts).toISOString().slice(0, 10) : today();
+const docName = (kind, sup, ref) => [kind, sup, ref].filter(Boolean).map(x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).filter(Boolean).join("_") + ".jpg";
+const photoBtns = (url, name, label) => `<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">${label || "Lihat"}</a><button type="button" class="btn sm ghost" data-act="dlPhoto" data-url="${esc(url)}" data-name="${esc(name)}">Unduh</button>`;
+function payDocs(p) {
+  const pays = Object.entries(p.paid || {}).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+  const parts = [];
+  if (p.photo) parts.push(photoBtns(p.photo, docName("invoice", p.supplier, p.inv || p.date), "Invoice"));
+  pays.forEach(([pid, x]) => parts.push(x.proof ? `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span>${photoBtns(x.proof, docName("bukti-bayar", p.supplier, x.date), "Bukti bayar")}` : `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span><span class="chip warn">tanpa bukti</span><button type="button" class="btn sm" data-act="addProof" data-id="${p.id}" data-k="${pid}">Tambah bukti</button>`));
+  if (!p.photo) parts.unshift(`<span class="chip warn">Belum ada foto invoice</span><button type="button" class="btn sm" data-act="addInvPic" data-id="${p.id}">Upload invoice</button>`);
+  return parts.length ? `<div class="row small" style="flex-basis:100%;gap:6px;flex-wrap:wrap">${parts.join("")}</div>` : "";
+}
+function orderDocs(o) {
+  if (o.status !== "diterima") return "";
+  const parts = [];
+  if (o.invoice?.photo) parts.push(`<span class="small muted">Invoice${o.invoice.no ? " " + esc(o.invoice.no) : ""}</span>${photoBtns(o.invoice.photo, docName("invoice", o.supplier, o.invoice.no || fdateIso(o.receivedAt)))}`);
+  else if (["manager", "gudang", "finance", "owner"].includes(realRole())) parts.push(`<span class="chip warn">Belum ada foto invoice</span><button type="button" class="btn sm" data-act="ordInv" data-id="${o.id}">Upload invoice</button>`);
+  Object.values(o.pays || {}).sort((a, b) => (a.date || "").localeCompare(b.date || "")).forEach(x => parts.push(`<span class="small muted">Dibayar ${fdate(x.date)} · ${rp(x.amt)}</span>${x.proof ? photoBtns(x.proof, docName("bukti-bayar", o.supplier, x.date), "Bukti bayar") : `<span class="chip">tanpa bukti</span>`}`));
+  if (o.invoice?.photo && !Object.keys(o.pays || {}).length) parts.push(`<span class="chip">Menunggu pembayaran Finance</span>`);
+  return parts.length ? `<div class="row small" style="gap:6px;flex-wrap:wrap">${parts.join("")}</div>` : "";
+}
+function modalDocPic(kind, id, k) {
+  const key = "x" + kind; delete DOCPIC[key];
+  const title = kind === "ord" || kind === "pinv" ? "Upload foto invoice" : "Tambah foto bukti bayar";
+  openModal(`<form data-submit="docPic" data-kind="${kind}" data-id="${id}" data-k="${k || ""}" class="modal" role="dialog" aria-label="${title}"><div class="modal-h"><h2>${title}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${kind === "ord" ? `<label class="f">No. invoice / nota (opsional)<input name="no" maxlength="40"></label>` : ""}
+    ${picField(key, "Pilih foto")}
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitDocPic(f) {
+  const kind = f.dataset.kind, id = f.dataset.id, k = f.dataset.k, key = "x" + kind;
+  if (!DOCPIC[key]) return toast("Pilih fotonya dulu.");
+  const btn = f.querySelector("[type=submit]"); btn.disabled = true;
+  const ok = await guard(async () => {
+    const url = await upDocPic(key);
+    if (kind === "ord") await mergeDoc("orders/" + id, {invoice: {no: f.no?.value.trim() || "", photo: url, at: Date.now(), by: S.me}}, {});
+    else if (kind === "pinv") { await mergeDoc("payables/" + id, {photo: url}, {}); const p = S.payables.find(x => x.id === id); if (p?.orderId && S.orders.some(o => o.id === p.orderId && !o.invoice?.photo)) await mergeDoc("orders/" + p.orderId, {invoice: {photo: url, no: p.inv || "", at: Date.now(), by: S.me}}, {}); }
+    else { const p = S.payables.find(x => x.id === id); await mergeDoc("payables/" + id, {paid: {[k]: {proof: url}}}, {}); if (p?.orderId && S.orders.some(o => o.id === p.orderId)) await mergeDoc("orders/" + p.orderId, {pays: {[k]: {date: p.paid[k].date, amt: p.paid[k].amt, proof: url, by: S.me}}}, {}); }
+  });
+  if (ok) { closeModal(); toast("Foto tersimpan."); } else btn.disabled = false;
+}
+async function dlPhoto(url, name) {
+  try { const r = await fetch(url); if (!r.ok) throw new Error(r.status); await S.dl.save({filename: name, data: await r.blob()}); toast("Foto diunduh."); }
+  catch (e) { window.open(url, "_blank", "noopener"); }
+}
+document.addEventListener("change", e => { if (e.target.dataset?.docpic) onDocPic(e.target); });
 
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
 
@@ -3540,7 +3626,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016142737";
+const BUILD = "20261016150530";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
