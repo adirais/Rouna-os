@@ -3042,7 +3042,8 @@ function hppRounaRows(list, base, olsHpp) {
 /* ===== Impor PDF Olsera "Penjualan berdasarkan SKU" (semua produk + harga modal Olsera) ===== */
 function parseOlseraSku(items) {
   const hd = n => items.find(i => i.str.trim().toLowerCase() === n);
-  const H = {name: hd("produk"), alt: hd("alternative") || hd("alternative name"), vr: hd("varian"), grp: hd("grup"), sku: hd("sku"), qty: hd("terjual"), rev: hd("penjualan"), modal: hd("modal")};
+  const qh = hd("qty"), tj = items.filter(i => i.str.trim().toLowerCase() === "terjual").sort((a, b) => qh ? Math.abs(a.x + a.w - qh.x - qh.w) - Math.abs(b.x + b.w - qh.x - qh.w) : a.x - b.x)[0];
+  const H = {name: hd("produk"), alt: hd("alternative") || hd("alternative name"), vr: hd("varian"), grp: hd("grup"), sku: hd("sku"), qty: tj || qh, rev: hd("penjualan"), modal: hd("modal")};
   if (!H.name || !H.grp || !H.qty || !H.rev || !H.modal || !hd("sku")) return null;
   const right = i => i.x + i.w, near = (i, h) => Math.abs(right(i) - right(h)) <= 5;
   const val = s => { const m = String(s).replace(/idr/gi, "").trim(); if (!/^-?\(?[\d.,]+\)?$/.test(m)) return null; let v = +m.replace(/[()]/g, "").replace(/\./g, "").replace(",", "."); if (/\(/.test(m)) v = -v; return isNaN(v) ? null : v; };
@@ -3110,19 +3111,27 @@ async function pdfItems(file) {
   return items;
 }
 async function onOlseraFiles(files) {
-  const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || f.type === "application/pdf"), other = files.filter(f => !pdfs.includes(f));
+  const isPdf = f => /\.pdf$/i.test(f.name) || f.type === "application/pdf";
+  const pdfs = files.filter(isPdf), other = files.filter(f => !isPdf(f));
   if (!pdfs.length) return other[0] && onOlseraFile(other[0]);
   toast("Membaca " + pdfs.length + " PDF…");
   const P = {daily: null, sku: null, bad: []};
   for (const f of pdfs) {
+    let why = "";
     try {
       const items = await pdfItems(f), K = parseOlseraSku(items);
-      if (K && K.rows.length) { P.sku = {...K, file: f.name}; continue; }
-      const Rs = parseOlseraSummary(items);
-      if (Rs.start && (Rs.categories.length || Rs.pl.revenue != null)) P.daily = {...Rs, file: f.name}; else P.bad.push(f.name);
-    } catch (e) { console.error(e); P.bad.push(f.name); }
+      if (K) { if (K.rows.length) { P.sku = {...K, file: f.name}; continue; } why = "terdeteksi laporan SKU, tapi tabel produknya tidak terbaca"; }
+      else {
+        const Rs = parseOlseraSummary(items);
+        if (Rs.start && (Rs.categories.length || Rs.pl.revenue != null)) { P.daily = {...Rs, file: f.name}; continue; }
+        why = /tanggal jual/i.test(items.map(i => i.str).join(" ")) ? "laporan Olsera jenis lain (bukan Keseluruhan Penjualan / Penjualan berdasarkan SKU)" : "bukan laporan Olsera";
+      }
+    } catch (e) { console.error(e); why = "gagal dibaca (" + (e.message || e) + ")"; }
+    P.bad.push(f.name + ": " + why);
   }
-  if (!P.daily && !P.sku) return toast(P.bad.length ? "PDF tidak dikenali. Unggah Laporan Keseluruhan Penjualan dan Penjualan berdasarkan SKU dari Olsera." : "PDF tidak terbaca.");
+  if (!P.daily && !P.sku) return openModal(`<div class="modal" role="dialog" aria-label="PDF tidak dikenali"><div class="modal-h"><h2>PDF belum bisa disimpan</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="alert warn"><div class="grow small">${P.bad.map(esc).join("<br>")}</div></div>
+    <p class="small muted" style="margin:0">Unggah PDF dari Olsera: <b>Laporan Keseluruhan Penjualan</b> dan <b>Penjualan berdasarkan SKU</b>, masing-masing untuk satu tanggal. Bila tetap gagal, kirim screenshot pesan ini.</p></div>`);
   P.date = (P.daily || P.sku).start; PAIR = P; modalPair();
 }
 function olsStatus(date) { return {daily: S.daily.some(d => d.date === date), sku: S.sales.some(s => s.date === date)}; }
@@ -3132,8 +3141,9 @@ function modalPair() {
   const card = (title, sub, ok, body, missTxt, hadIt) => `<div class="kpi" style="gap:6px"><span class="eyebrow">${title}</span>${ok ? `<span class="chip ok" style="justify-self:start">Siap disimpan</span>${body}` : hadIt ? `<span class="chip ok" style="justify-self:start">Sudah tersimpan sebelumnya</span>` : `<span class="chip warn" style="justify-self:start">Belum diunggah</span><span class="small muted">${missTxt}</span>`}<span class="small muted">${sub}</span></div>`;
   const tq = K ? K.rows.reduce((s, r) => s + r.qty, 0) : 0;
   const after = {daily: !!D || had.daily, sku: !!K || had.sku};
-  openModal(`<form data-submit="pair" class="modal wide" role="dialog" aria-label="Laporan Olsera"><div class="modal-h"><h2>Laporan Olsera · ${fdate(date)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-    ${multi ? `<div class="alert crit"><div class="grow">Laporan harus untuk <b>satu tanggal</b>. Pilih tanggal yang sama di awal dan akhir saat export dari Olsera.</div></div>` : ""}
+  openModal(`<form data-submit="pair" class="modal wide" role="dialog" aria-label="Laporan Olsera"><div class="modal-h"><h2>Laporan Olsera · ${date ? fdate(date) : "?"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    ${!date ? `<div class="alert crit"><div class="grow">Tanggal laporan tidak terbaca dari PDF.</div></div>` : ""}
+    ${multi ? `<div class="alert crit"><div class="grow">Laporan harus untuk <b>satu tanggal</b>${K && K.start !== K.end ? ` (SKU: ${fdate(K.start)} – ${fdate(K.end)})` : ""}${D && D.start !== D.end ? ` (Keseluruhan: ${fdate(D.start)} – ${fdate(D.end)})` : ""}. Saat export di Olsera, pilih tanggal awal dan akhir yang sama.</div></div>` : ""}
     ${clash ? `<div class="alert crit"><div class="grow">Tanggal kedua laporan berbeda: Keseluruhan ${fdate(D.start)}, SKU ${fdate(K.start)}. Unggah pasangan untuk tanggal yang sama.</div></div>` : ""}
     <div class="grid2">
       ${card("1 · Keseluruhan Penjualan", "Pendapatan, CASH/QRIS, diskon, loyalti, batal, HPP Olsera", D, D ? `<span class="v">${rpk(D.pl.revenue)}</span><span class="small muted">HPP Olsera ${pct(D.pl.revenue ? D.pl.hpp / D.pl.revenue : 0)} · ${esc(D.file)}</span>` : "", "Export PDF Laporan Keseluruhan Penjualan tanggal ini.", had.daily)}
@@ -3141,7 +3151,7 @@ function modalPair() {
     ${D && K && D.catQty && tq && Math.abs(D.catQty - tq) > 0 ? `<div class="alert warn"><div class="grow small">Jumlah item berbeda: Keseluruhan ${fq(D.catQty)}, SKU ${fq(tq)}. Pastikan keduanya dari tanggal dan outlet yang sama.</div></div>` : ""}
     ${P.bad.length ? `<div class="alert warn"><div class="grow small">Tidak dikenali: ${P.bad.map(esc).join(", ")}</div></div>` : ""}
     ${!(after.daily && after.sku) ? `<div class="alert warn"><div class="grow small"><b>Laporan ${fdate(date)} belum lengkap.</b> Tiap hari wajib 2 PDF. Bisa disimpan sekarang, lalu unggah yang kurang nanti. Tips: pilih kedua PDF sekaligus saat unggah.</div></div>` : `<div class="alert acc"><div class="grow small">Lengkap: kedua laporan ${fdate(date)} tersedia.</div></div>`}
-    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" ${multi || clash ? "disabled" : ""}>Simpan ${D && K ? "2 laporan" : "laporan"}</button></div></form>`);
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" ${multi || clash || !date ? "disabled" : ""}>Simpan ${D && K ? "2 laporan" : "laporan"}</button></div></form>`);
 }
 async function submitPair() {
   const P = PAIR; if (!P) return;
@@ -3508,7 +3518,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016131201";
+const BUILD = "20261016131907";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
