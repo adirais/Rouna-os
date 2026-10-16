@@ -1013,6 +1013,7 @@ function viewSales() {
     ${recDate ? reconcileView(recDate) : `<div class="small muted">Butuh data penjualan dan closing di tanggal yang sama.</div>`}</section>
   </div>
   ${day ? `<section class="panel"><div class="panel-h"><h2>Detail ${fdate(day.date)}</h2><div class="row"><span class="small muted">${esc(day.file || "")}</span>${isMgr() ? `<button class="btn sm danger" data-act="delSales" data-d="${day.date}">Hapus hari ini</button>` : ""}</div></div>
+    <div class="list">${(() => { const dl = S.daily.find(x => x.date === day.date); return hppRounaRows([day], dl?.pl?.revenue || day.total, dl?.pl?.hpp); })()}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th><th>Resep</th></tr></thead><tbody>
     ${[...(day.rows || [])].sort((a, b) => b.rev - a.rev).map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td><td>${S.recipes[slug(r.name)] ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`;
 }
@@ -1154,22 +1155,23 @@ function dailyPanel() {
   if (!S.daily.length) return "";
   const sel = S.ui.dailyDay ? S.daily.find(d => d.date === S.ui.dailyDay) : null;
   return `<section class="panel"><h2>Ringkasan harian Olsera</h2>
-    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th class="r">Pendapatan</th><th class="r">HPP Olsera</th><th class="r">Diskon</th><th class="r">Batal</th><th></th></tr></thead><tbody>
-    ${S.daily.slice(0, 31).map(d => { const r = d.pl?.revenue || 0; return `<tr><td>${fdate(d.date)}</td><td class="r num">${rp(r)}</td><td class="r num">${pct(r ? (d.pl?.hpp || 0) / r : 0)}</td><td class="r num">${rp(d.discountTotal)}</td><td class="r num">${d.cancelled?.qty ? fq(d.cancelled.qty) + " · " + rpk(d.cancelled.amt) : "-"}</td><td class="r"><button class="btn sm" data-act="ui" data-k="dailyDay" data-v="${S.ui.dailyDay === d.date ? "" : d.date}">${S.ui.dailyDay === d.date ? "Tutup" : "Detail"}</button></td></tr>`; }).join("")}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th class="r">Pendapatan</th><th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Diskon</th><th class="r">Batal</th><th></th></tr></thead><tbody>
+    ${S.daily.slice(0, 31).map(d => { const r = d.pl?.revenue || 0; return `<tr><td>${fdate(d.date)}</td><td class="r num">${rp(r)}</td><td class="r num">${pct(r ? (d.pl?.hpp || 0) / r : 0)}</td><td class="r num">${(() => { const l = S.sales.filter(s => s.date === d.date); if (!l.length) return '<span class="muted">-</span>'; const h = hppRouna(l); return pct(r ? h.hpp / r : 0) + (h.missList.length ? ' <span class="chip warn" title="ada produk tanpa resep">!</span>' : ""); })()}</td><td class="r num">${rp(d.discountTotal)}</td><td class="r num">${d.cancelled?.qty ? fq(d.cancelled.qty) + " · " + rpk(d.cancelled.amt) : "-"}</td><td class="r"><button class="btn sm" data-act="ui" data-k="dailyDay" data-v="${S.ui.dailyDay === d.date ? "" : d.date}">${S.ui.dailyDay === d.date ? "Tutup" : "Detail"}</button></td></tr>`; }).join("")}</tbody></table></div>
     ${sel ? dailyDetail(sel) : ""}</section>`;
 }
 function dailyDetail(d) {
   const maxG = Math.max(...(d.categories || []).map(c => c.rev), 1);
   return `<div class="grid2" style="border-top:1px solid var(--line);padding-top:12px">
-    <div style="display:grid;gap:10px;min-width:0"><div class="eyebrow">Grup produk · ${fdate(d.date)}</div><div class="hbars">${[...(d.categories || [])].sort((a, b) => b.rev - a.rev).map(c => `<div class="hb"><span>${esc(c.name)}</span><span class="num">${rpk(c.rev)} · ${fq(c.qty)}</span><div class="bar"><i style="width:${c.rev / maxG * 100}%"></i></div></div>`).join("")}</div></div>
+    <div style="display:grid;gap:10px;min-width:0;align-content:start"><div class="eyebrow">Grup produk · ${fdate(d.date)}</div><div class="hbars">${[...(d.categories || [])].sort((a, b) => b.rev - a.rev).map(c => `<div class="hb"><span>${esc(c.name)}</span><span class="num">${rpk(c.rev)} · ${fq(c.qty)}</span><div class="bar"><i style="width:${c.rev / maxG * 100}%"></i></div></div>`).join("")}</div></div>
     <div style="display:grid;gap:10px;align-content:start;min-width:0">
       <div class="eyebrow">Top produk</div><div class="list">${(d.top || []).map(t => `<div class="li"><span class="grow">${esc(t.name)}</span><span class="num">${rpk(t.rev)} · ${fq(t.qty)}</span></div>`).join("")}</div>
       <div class="eyebrow">Diskon & loyalti</div><div class="list">${(d.discounts || []).map(x => `<div class="li"><span class="grow">${esc(x.name)}<span class="sub small muted">${esc(x.src)} · ${fq(x.qty)} pesanan</span></span><span class="num">${rp(x.amt)}</span></div>`).join("")}${(d.loyalty || []).map(l => `<div class="li"><span class="grow">${esc(l.name)}<span class="sub small muted">${fq(l.points)} poin</span></span><span class="num">${rp(l.amt)}</span></div>`).join("")}</div>
       <div class="eyebrow">Laba/rugi (Olsera)</div><div class="list">
         <div class="li"><span class="grow">Pendapatan</span><span class="num">${rp(d.pl?.revenue)}</span></div>
         ${Object.entries(d.channels || {}).map(([k, v]) => `<div class="li"><span class="grow muted">· ${esc(k)}</span><span class="num">${rp(v)}</span></div>`).join("")}
-        <div class="li"><span class="grow">HPP</span><span class="num">${rp(d.pl?.hpp)}</span></div>
-        <div class="li"><span class="grow">Laba kotor</span><span class="num">${rp(d.pl?.gross)}</span></div>
+        <div class="li"><span class="grow">HPP Olsera<span class="sub small muted">harga pokok di back office Olsera · ${pct(d.pl?.revenue ? (d.pl?.hpp || 0) / d.pl.revenue : 0)}</span></span><span class="num">${rp(d.pl?.hpp)}</span></div>
+        ${hppRounaRows(S.sales.filter(s => s.date === d.date), d.pl?.revenue, d.pl?.hpp)}
+        <div class="li"><span class="grow">Laba kotor (Olsera)</span><span class="num">${rp(d.pl?.gross)}</span></div>
         ${d.pl?.deposit ? `<div class="li"><span class="grow muted">Deposit ditebus</span><span class="num">${rp(d.pl.deposit)}</span></div>` : ""}</div>
       <div class="row">${Object.entries(d.payments || {}).map(([k, v]) => `<span class="chip">${esc(k)} ${rp(v)}</span>`).join("")}</div>
       ${isMgr() ? `<div><button class="btn sm danger" data-act="delDaily" data-d="${d.date}">Hapus ringkasan hari ini</button></div>` : ""}
@@ -1733,6 +1735,7 @@ function viewPnl(mo) {
       <div class="li"><div class="grow">Bahan terpakai menurut closing<span class="sub small muted">${P.nClose} hari closing · termasuk waste ${rp(P.waste)}</span></div><span class="num">${rp(P.use + P.waste)}</span></div>
       <div class="li"><div class="grow">Barang masuk tercatat di stok<span class="sub small muted">nilai nota barang masuk & order</span></div><span class="num">${rp(P.stockIn)}</span></div>
       <div class="li"><div class="grow">HPP menurut Olsera</div><span class="num">${rp(P.hppOls)}</span></div>
+      ${hppRounaRows(S.sales.filter(s => s.date.startsWith(P.mo)), P.rev, P.hppOls || null).replace("Unggah export penjualan per produk Olsera untuk tanggal ini", "Unggah export penjualan per produk Olsera bulan ini")}
       <div class="small muted">Laporan memakai basis kas: bahan baku dihitung saat dibayar. Bandingkan dengan pemakaian riil untuk melihat stok yang menumpuk atau bocor.</div>
     </div></section></div>`;
 }
@@ -3012,6 +3015,26 @@ document.addEventListener("change", e => {
   else if (el.name === "ord" && el.closest("form[data-submit=invoice]")) { const o = S.orders.find(x => x.id === el.value), f = el.form; if (o) { f.supplier.value = o.supplier || ""; f.amt.value = Math.round(orderTotal(o)); } }
 });
 
+/* ===== HPP versi ROUNA: jumlah terjual per produk (Olsera) × COGS resep ===== */
+function hppRouna(list) {
+  const o = {days: list.length, hpp: 0, rev: 0, revCov: 0, qty: 0, miss: {}};
+  list.forEach(s => (s.rows || []).forEach(r => {
+    const q = +r.qty || 0, v = +r.rev || 0, c = recipeCost(r.name); o.rev += v; o.qty += q;
+    if (c == null) { const m = (o.miss[slug(r.name)] ||= {name: r.name, qty: 0, rev: 0}); m.qty += q; m.rev += v; }
+    else { o.hpp += q * c; o.revCov += v; }
+  }));
+  o.missList = Object.values(o.miss).sort((a, b) => b.rev - a.rev); o.cov = o.rev ? o.revCov / o.rev : 0;
+  return o;
+}
+function hppRounaRows(list, base, olsHpp) {
+  if (!list.length) return `<div class="li"><span class="grow">HPP versi ROUNA<span class="sub small muted">Unggah export penjualan per produk Olsera untuk tanggal ini</span></span><span class="num muted">-</span></div>`;
+  const h = hppRouna(list), part = base && h.rev < base * .9, den = part ? h.rev : (base || h.rev), gap = olsHpp != null && !part ? olsHpp - h.hpp : null;
+  return `<div class="li"><span class="grow"><b>HPP versi ROUNA</b><span class="sub small muted">jumlah terjual × COGS resep · ${pct(den ? h.hpp / den : 0)} dari ${part ? "penjualan per produk" : "pendapatan"}</span></span><span class="num"><b>${rp(h.hpp)}</b></span></div>
+    ${part ? `<div class="li"><span class="grow small" style="color:var(--warn)">Data per produk baru ${rp(h.rev)} dari pendapatan ${rp(base)} — belum bisa dibandingkan dengan Olsera<span class="sub small muted">Unggah export penjualan per produk yang lengkap untuk periode yang sama</span></span></div>` : ""}
+    ${gap != null ? `<div class="li"><span class="grow muted">Selisih Olsera − ROUNA<span class="sub small muted">${Math.abs(gap) > h.hpp * .05 ? "cek harga pokok produk di Olsera" : "masih wajar (≤5%)"}</span></span><span class="num" style="color:${Math.abs(gap) > h.hpp * .05 ? "var(--warn)" : "inherit"}">${rp(gap)}</span></div>` : ""}
+    ${h.missList.length ? `<div class="li"><span class="grow small" style="color:var(--warn)">${h.missList.length} produk belum punya resep (${pct(1 - h.cov)} penjualan) — HPP-nya belum terhitung<span class="sub small muted">${h.missList.slice(0, 5).map(m => esc(m.name)).join(", ")}${h.missList.length > 5 ? ", …" : ""}</span></span></div>` : ""}`;
+}
+
 /* ---------- V3 (ala Accurate): Kas & Bank, Aset tetap, Kartu stok, Log aktivitas ---------- */
 
 /* ===== Kas & Bank ===== */
@@ -3355,7 +3378,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016121149";
+const BUILD = "20261016123039";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
