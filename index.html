@@ -2610,6 +2610,7 @@ const shiftDefs = () => (Array.isArray(S.settings.shifts) && S.settings.shifts.l
 const shiftDef = k => shiftDefs().find(x => x.k === k);
 const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 5;
 const potMenitDefault = () => +S.settings.potMenit || 0;
+const lemburDefault = () => S.settings.lemburJam != null && S.settings.lemburJam !== "" ? +S.settings.lemburJam : 15000;
 const planOf = date => S.shifts.find(x => x.month === date.slice(0, 7))?.plan?.[date] || {};
 function shiftLabel(k) { if (LEAVE[k]) return LEAVE[k][0]; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
 function shCls(k) { if (!k) return "sh-x"; if (k === "SX") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
@@ -2682,7 +2683,7 @@ function payRows(mo) {
   return Object.entries(S.staff).filter(([, s]) => s.active !== false && s.role !== "owner").sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, s]) => {
     const sal = salaryOf(id), a = attStats(mo, id), pk = +sal.pokok || 0, pa = sal.potAbsen != null && sal.potAbsen !== "" ? +sal.potAbsen : Math.round(pk / 26);
     const pm = sal.potTelat != null && sal.potTelat !== "" ? +sal.potTelat : potMenitDefault();
-    const tunj = +sal.tunjangan || 0, lr = +sal.lembur || 0;
+    const tunj = +sal.tunjangan || 0, lr = sal.lembur != null && sal.lembur !== "" ? +sal.lembur : lemburDefault();
     const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0, lj = +sv.lemburJam || 0, pl = +sv.potLain || 0, ket = sv.ket || "";
     const potA = (a.alpha + a.sakitTS) * pa, potT = Math.round(a.telatHitung * pm), lemb = Math.round(lj * lr);
     const gross = pk + tunj + lemb + bon, pot = potA + potT + kas + pl, net = gross - pot;
@@ -2753,7 +2754,7 @@ function modalSalary(id) {
     <label class="f">Tunjangan tetap per bulan<input name="tunjangan" type="number" min="0" step="10000" value="${s.tunjangan ?? ""}" placeholder="mis. transport/makan, kosong = 0"></label>
     <label class="f">Potongan per hari alpha<input name="potAbsen" type="number" min="0" step="1000" value="${s.potAbsen ?? ""}" placeholder="kosong = pokok ÷ 26"></label>
     <label class="f">Potongan per menit telat<input name="potTelat" type="number" min="0" step="100" value="${s.potTelat ?? ""}" placeholder="kosong = ikut pengaturan (${rp(potMenitDefault())})"></label>
-    <label class="f">Upah lembur per jam<input name="lembur" type="number" min="0" step="1000" value="${s.lembur ?? ""}" placeholder="kosong = 0"></label>
+    <label class="f">Upah lembur per jam<input name="lembur" type="number" min="0" step="1000" value="${s.lembur ?? ""}" placeholder="kosong = ikut pengaturan (${rp(lemburDefault())})"></label>
     <label class="f">Divisi di slip<input name="divisi" maxlength="24" value="${esc(s.divisi || "")}" placeholder="${DIVISI[st?.role] || "mis. Bar"}"></label>
     <label class="f">Dibayar melalui<input name="via" maxlength="40" value="${esc(s.via || "")}" placeholder="mis. Transfer BCA / Tunai"></label></div>
     <p class="small muted" style="margin:0">Jam lembur diisi per bulan di tabel Gaji per orang. Jangan tulis nomor rekening di sini.</p>
@@ -2998,7 +2999,8 @@ function viewNotifSettings() {
       <p class="small muted" style="margin:0">Default mengikuti SOP General. Kode dipakai di Jadwal shift. Shift yang selesai tengah malam tulis 00:00.</p>
       <div class="fgrid">${[...shiftDefs(), ...Array(Math.max(1, 9 - shiftDefs().length)).fill(null)].slice(0, 9).map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d?.k || "")}" maxlength="3" style="width:60px" placeholder="Kode" aria-label="Kode"><input name="n${i}" value="${esc(d?.n || "")}" maxlength="24" style="flex:1 1 120px" placeholder="${d ? "" : "Shift tambahan (opsional)"}" aria-label="Nama"><input name="s${i}" type="time" value="${d?.s || ""}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d?.e || ""}" style="width:auto" aria-label="Selesai"></div>`).join("")}</div>
       <div class="fgrid two" style="max-width:640px"><label class="f">Toleransi telat per shift (menit)<input name="tol" type="number" min="0" max="120" value="${tolTelat()}"></label>
-      <label class="f">Potongan per menit telat (Rp)<input name="potMenit" type="number" min="0" step="100" value="${potMenitDefault() || ""}" placeholder="0 = tidak dipotong"></label></div>
+      <label class="f">Potongan per menit telat (Rp)<input name="potMenit" type="number" min="0" step="100" value="${potMenitDefault() || ""}" placeholder="0 = tidak dipotong"></label>
+      <label class="f">Tarif lembur per jam (Rp)<input name="lemburJam" type="number" min="0" step="1000" value="${lemburDefault()}"></label></div>
       <div><button class="btn pri" type="submit">Simpan jam shift</button></div></form>`;
 }
 async function loadTg() { try { S.tg = await callFn("notify", {action: "status"}); } catch (e) { S.tg = {hasToken: false, chats: [], err: e.message}; } render(); }
@@ -3036,7 +3038,7 @@ const SUBMIT2 = {
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
     if (!list.length) return toast("Isi minimal satu shift.");
-    if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value)), potMenit: Math.max(0, num(f.potMenit.value))}))) toast("Jam shift tersimpan.");
+    if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value)), potMenit: Math.max(0, num(f.potMenit.value)), lemburJam: Math.max(0, num(f.lemburJam.value))}))) toast("Jam shift tersimpan.");
   },
   slipSet: async f => { if (await guard(() => mergeDoc("settings/app", {slipAlamat: f.alamat.value.trim(), slipKota: f.kota.value.trim(), slipTtdJabatan: f.jab.value.trim(), slipTtdNama: f.nama.value.trim()}, {}))) { closeModal(); toast("Pengaturan slip tersimpan."); } },
   waSet: async f => { const b = f.querySelector("button[type=submit]"); b.disabled = true; try { const r = await callFn("notify", {action: "waSet", token: f.token.value, targets: f.targets.value}); toast("Tersimpan: " + r.targets.length + " penerima. Klik Kirim pesan tes."); loadTg(); } catch (e) { b.disabled = false; toast(e.message); } },
@@ -3626,7 +3628,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016150530";
+const BUILD = "20261016151629";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
