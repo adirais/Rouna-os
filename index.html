@@ -248,6 +248,13 @@ code{background:var(--sunk);padding:1px 6px;border-radius:6px;font-size:.9em}
 
 .badge-n{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--crit);color:#fff;font-size:.68rem;align-items:center;justify-content:center;margin-left:4px;vertical-align:1px}
 .hr-seg{max-width:100%}
+
+.bnav .bn-abs{flex:1 1 0;min-width:0;border:0;background:none;padding:0 4px 9px;font-size:.74rem;font-weight:700;color:var(--ink);cursor:pointer;display:grid;justify-items:center;align-content:end;gap:3px}
+.bnav .bn-abs .fab{width:54px;height:54px;margin-top:-24px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;border:4px solid var(--surface);box-shadow:0 6px 16px rgba(20,30,45,.22)}
+.bnav .bn-abs .fab svg{width:24px;height:24px}
+.bnav .bn-abs.in .fab{background:var(--ink);color:var(--surface)}
+.bnav .bn-abs.done .fab{background:var(--ok-soft);color:var(--ok);box-shadow:none}
+.bnav .bn-abs:focus-visible .fab{outline:3px solid var(--ink);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -563,7 +570,7 @@ function render() {
         <div class="who"><button class="btn sm ghost hintbtn" data-act="hints" aria-pressed="${!!S.hints}" title="Tampilkan petunjuk">?</button><span class="chip acc">${ROLES[realRole()]}</span><b>${esc(me().name)}</b><button class="btn sm ghost" data-act="logout">Keluar</button></div></header>
       <main>${V()}</main>
     </div>
-    <nav class="bnav" aria-label="Menu">${mobileNav(allowed, navBtn)}</nav>${S.ui.more ? `<div class="more" data-act="moreBg"><div class="sheet" role="dialog" aria-label="Menu lain">${navOrder(allowed).slice(allowed.length > 5 ? 4 : 5).map(n => navBtn(n)).join("")}</div></div>` : ""}</div>`;
+    <nav class="bnav" aria-label="Menu">${mobileNav(allowed, navBtn)}</nav>${S.ui.more ? `<div class="more" data-act="moreBg"><div class="sheet" role="dialog" aria-label="Menu lain">${navRest(allowed).map(n => navBtn(n)).join("")}</div></div>` : ""}</div>`;
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
 }
 const QA_ICON = {
@@ -575,9 +582,26 @@ function qa(act, k, icon, label) {
   const svg = QA_ICON[icon] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QA_ICON[icon]}</svg>` : ico(icon);
   return `<button class="qa-b" data-act="${act}" ${k ? `data-k="${k}"` : ""}>${svg}<span>${label}</span></button>`;
 }
+const NAV_PRI_R = {owner: ["home", "sales", "keuangan", "absen"], manager: ["home", "order", "stok", "absen"], finance: ["home", "keuangan", "sales", "absen"], headbar: ["home", "stok", "closing", "absen"], kitchen: ["home", "stok", "closing", "menu"], gudang: ["home", "stok", "order", "absen"], crew: ["home", "closing", "menu", "sop", "absen"]};
 const NAV_PRI = ["home", "stok", "sales", "closing"];
-function navOrder(allowed) { const pri = NAV_PRI.map(k => allowed.find(n => n[0] === k)).filter(Boolean); return [...pri, ...allowed.filter(n => !pri.includes(n))]; }
+function navOrder(allowed) { const pri = (NAV_PRI_R[realRole()] || NAV_PRI).map(k => allowed.find(n => n[0] === k)).filter(Boolean); return [...pri, ...allowed.filter(n => !pri.includes(n))]; }
+const NAV_BOT = {owner: ["home", "sales", "keuangan", "absen"], manager: ["home", "order", "absen"], finance: ["home", "keuangan", "absen"], headbar: ["home", "stok", "closing"], kitchen: ["home", "stok", "closing"], gudang: ["home", "stok", "order"], crew: ["home", "closing", "menu"]};
+const navPick = allowed => (NAV_BOT[realRole()] || ["home", "stok", "closing"]).map(k => allowed.find(n => n[0] === k)).filter(Boolean);
+const navRest = allowed => { const p = navPick(allowed); return navOrder(allowed).filter(n => !p.includes(n)); };
+function absFab() {
+  if (realRole() === "owner" || !me()) return "";
+  const m = S.attendance.find(a => a.date === attDate())?.rec?.[S.me], done = m?.in && m?.out, l = !m?.in ? "Absen" : !m.out ? "Pulang" : "Selesai";
+  return `<button class="bn-abs ${done ? "done" : m?.in ? "in" : ""}" ${done ? 'data-act="hrTab" data-v="hari"' : 'data-act="absenNow"'} aria-label="${l === "Absen" ? "Absen masuk dengan selfie" : l === "Pulang" ? "Absen pulang dengan selfie" : "Absensi hari ini selesai"}"><span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${done ? '<path d="m5 12 5 5L20 7"/>' : '<path d="M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>'}</svg></span><span>${l}</span></button>`;
+}
 function mobileNav(allowed, navBtn) {
+  const pick = navPick(allowed), rest = navRest(allowed), fab = absFab(), btns = pick.map(n => navBtn(n));
+  if (fab) btns.splice(2, 0, fab);
+  if (!rest.length) return btns.join("");
+  const inRest = rest.some(n => n[0] === S.view);
+  const badge = rest.some(n => (n[0] === "sop" && S.docs.some(d => docOk(d) && !docAck(d))) || (n[0] === "stok" && lowItems().length) || (n[0] === "absen" && hrPending()));
+  return btns.join("") + `<button data-act="more" ${inRest || S.ui.more ? 'aria-current="page"' : ""} aria-expanded="${!!S.ui.more}">${ico("more")}<span>Lainnya</span>${badge ? '<span class="badge">•</span>' : ""}</button>`;
+}
+function mobileNavOld(allowed, navBtn) {
   allowed = navOrder(allowed);
   if (allowed.length <= 5) return allowed.map(n => navBtn(n)).join("");
   const rest = allowed.slice(4), inRest = rest.some(n => n[0] === S.view);
@@ -2324,7 +2348,7 @@ function viewAbsen() {
   <section class="panel"><div class="panel-h"><h2>Absen kamu ${myShiftChip()}</h2>${mine?.in ? `<span class="chip ok">Masuk ${ftime(mine.in.ts)}</span>` : ""}${mine?.out ? `<span class="chip">Pulang ${ftime(mine.out.ts)}</span>` : ""}</div>
     ${!mine?.in ? `<p class="small muted" style="margin:0">Ambil selfie di area outlet sebagai bukti kehadiran.</p><div><button class="btn pri" data-act="absenNow">Check-in dengan selfie</button></div>` : !mine.out ? `<div><button class="btn pri" data-act="absenNow">Check-out dengan selfie</button></div>` : `<div class="small muted">Absensi hari ini lengkap. Sampai besok.</div>`}</section>
   ${viewVoucher()}
-  ${["manager", "headbar"].includes(role()) ? `<section class="panel"><h2>Kehadiran hari ini</h2><div class="list">${staff.map(([id, s]) => { const r = att?.rec?.[id]; return `<div class="li"><div class="row" style="gap:10px;flex-wrap:nowrap;min-width:0">${pic(r?.in) || '<span class="thumb"></span>'}<div class="grow" style="min-width:0"><b>${esc(s.name)}</b><span class="sub small muted">${ROLES[s.role]}</span></div></div>
+  ${["manager", "headbar", "finance"].includes(role()) ? `<section class="panel"><h2>Kehadiran hari ini</h2><div class="list">${staff.map(([id, s]) => { const r = att?.rec?.[id]; return `<div class="li"><div class="row" style="gap:10px;flex-wrap:nowrap;min-width:0">${pic(r?.in) || '<span class="thumb"></span>'}<div class="grow" style="min-width:0"><b>${esc(s.name)}</b><span class="sub small muted">${ROLES[s.role]}</span></div></div>
     <span>${r?.in ? `<span class="chip ok">${ftime(r.in.ts)}</span> ${geoChip(r.in)}` : '<span class="chip">Belum</span>'} ${r?.out ? `<span class="chip">${ftime(r.out.ts)}</span> ${geoChip(r.out)}` : ""}</span>${pic(r?.out)}</div>`; }).join("")}</div></section>` : ""}
   ${recap}`;
 }
@@ -2585,7 +2609,7 @@ function confirmBox(title, text, label, fn) {
 /* ---------- V2: target & prime cost, jadwal shift → gaji, utang supplier, notifikasi Telegram ---------- */
 const canFin = () => ["owner", "finance"].includes(realRole());
 const mgrNoFin = () => realRole() === "manager";
-const canShift = () => ["owner", "manager", "headbar"].includes(realRole());
+const canShift = () => ["owner", "manager", "headbar", "finance"].includes(realRole());
 
 /* ===== Target & prime cost ===== */
 const tgtMonth = () => +S.settings.tgtMonth || 0;
@@ -3642,8 +3666,8 @@ document.addEventListener("change", e => {
 const HR_APPROVER = ["owner", "manager", "headbar", "finance"];
 const isHrApprover = () => HR_APPROVER.includes(realRole());
 const isHrAdmin = () => ["owner", "manager", "finance"].includes(realRole());
-const canTrainEdit = () => ["owner", "manager"].includes(realRole());
-const canLog = () => ["owner", "manager", "headbar"].includes(realRole());
+const canTrainEdit = () => ["owner", "manager", "finance"].includes(realRole());
+const canLog = () => ["owner", "manager", "headbar", "finance"].includes(realRole());
 const REQ_T = {cuti: "Cuti", izin: "Izin", sakit: "Sakit", swap: "Tukar shift", lembur: "Lembur"};
 const REQ_ST = {menunggu_rekan: ["Menunggu rekan", "warn"], menunggu: ["Menunggu persetujuan", "warn"], disetujui: ["Disetujui", "ok"], ditolak: ["Ditolak", "crit"], ditolak_rekan: ["Ditolak rekan", "crit"], batal: ["Dibatalkan", ""]};
 const CONTRACT = {percobaan: "Masa percobaan", kontrak: "Kontrak", tetap: "Tetap", harian: "Harian / part time", magang: "Magang"};
@@ -3664,6 +3688,7 @@ function cutiQuota(sid) { const p = S.hrprofile?.[sid] || {}; if (p.cutiQuota !=
 function cutiUsed(sid, yr) { yr = yr || today().slice(0, 4); return allReqs().filter(r => r.sid === sid && r.type === "cuti" && ["menunggu", "disetujui"].includes(r.status) && r.from.startsWith(yr)).reduce((s, r) => s + reqDays(r), 0); }
 function myCuti() { if (S.hrMine) return {q: S.hrMine.quota, u: S.hrMine.used}; return {q: cutiQuota(S.me), u: cutiUsed(S.me)}; }
 function lemburApproved(mo, sid) { return allReqs().filter(r => r.type === "lembur" && r.status === "disetujui" && r.sid === sid && r.from.startsWith(mo)).reduce((s, r) => s + (+r.hours || 0), 0); }
+const hrPending = () => allReqs().filter(r => (r.partner === S.me && r.status === "menunggu_rekan") || (isHrApprover() && r.status === "menunggu" && r.sid !== S.me)).length;
 const stChip = r => { const s = REQ_ST[r.status] || [r.status, ""]; return `<span class="chip ${s[1]}">${s[0]}</span>`; };
 
 /* ===== Notifikasi Beranda ===== */
@@ -3925,7 +3950,7 @@ function viewLogbook() {
       <label class="f">Kategori<select name="cat">${LOG_CAT.map(c => `<option>${c}</option>`).join("")}</select></label>
       <label class="f" style="grid-column:1/-1">Catatan<textarea name="text" rows="3" maxlength="600" required placeholder="mis. Grinder 2 bunyi kasar, sudah lapor teknisi. Susu oat tinggal 2 karton."></textarea></label>
       <label class="row small" style="gap:6px;cursor:pointer"><input type="checkbox" name="follow" style="width:18px;height:18px">Perlu tindak lanjut</label><div style="text-align:right"><button class="btn pri" type="submit">Simpan catatan</button></div></form>` : ""}
-    <p class="small muted" style="margin:0">Dibaca semua staf. Ditulis oleh Owner, Manager, dan Headbar.</p></section>`;
+    <p class="small muted" style="margin:0">Dibaca semua staf. Ditulis oleh Owner, Manager, Headbar, dan Finance.</p></section>`;
 }
 async function submitLog(f) {
   const t = today(), id = uid();
@@ -4122,7 +4147,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261017115315";
+const BUILD = "20261017120009";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
