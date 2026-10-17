@@ -2589,7 +2589,7 @@ const canShift = () => ["owner", "manager", "headbar"].includes(realRole());
 
 /* ===== Target & prime cost ===== */
 const tgtMonth = () => +S.settings.tgtMonth || 0;
-const primeMax = () => +S.settings.primeMax || 60;
+const primeMax = () => +S.settings.primeMax || 48;
 function revenueOn(date) {
   const c = cashEntries(date.slice(0, 7)).filter(x => x.date === date);
   if (c.length) return c.reduce((s, x) => s + cashTotal(x), 0);
@@ -2613,7 +2613,7 @@ function primeCard(P) {
   return `<section class="panel"><div class="panel-h"><h2>Prime cost</h2><span class="chip ${cls}">${pct(pc)} · batas ${pct(mx)}</span></div>
     <div class="stack"><i style="width:${Math.min(100, cogs / r * 100)}%;background:var(--brand)"></i><i style="width:${Math.min(100, lab / r * 100)}%;background:var(--black)"></i><s style="left:${Math.min(100, mx * 100)}%"></s></div>
     <div class="row small"><span><span class="dot" style="background:var(--brand)"></span>Bahan & vendor ${rpk(cogs)} · ${pct(cogs / r)}</span><span><span class="dot" style="background:var(--black)"></span>Gaji ${rpk(lab)} · ${pct(lab / r)}</span></div>
-    <p class="small muted" style="margin:0">Prime cost = (bahan baku + produk vendor + gaji) ÷ pendapatan. Batas sehat F&B umumnya 55–65%; ubah batas di Pengaturan → Target & notifikasi.</p></section>`;
+    <p class="small muted" style="margin:0">Prime cost = (bahan baku + produk vendor + gaji) ÷ pendapatan. Standar Rouna ≤48% (HPP 32% + payroll 16%); ubah batas di Pengaturan → Target & notifikasi.</p></section>`;
 }
 
 /* ===== Jadwal shift (mengikuti SOP General) ===== */
@@ -3050,7 +3050,7 @@ const ACT2 = {
 };
 const SUBMIT2 = {
   salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(), docPic: submitDocPic, olsMonth: () => submitOlsMonth(),
-  target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 60))}, {}))) toast("Target tersimpan."); },
+  target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 48))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
     const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
     if (!list.length) return toast("Isi minimal satu shift.");
@@ -3360,19 +3360,26 @@ async function dlPhoto(url, name) {
 document.addEventListener("change", e => { if (e.target.dataset?.docpic) onDocPic(e.target); });
 
 /* ===== Dashboard laba rugi standar F&B: kelompok biaya, diagram bulat, acuan sehat ===== */
+/* Standar persentase biaya dari omzet (ditetapkan Adi, 17 Okt 2026). Total 75%, sisa 25% = target laba. */
 const FNB = [
-  {k: "hpp", n: "HPP (bahan & produk vendor)", c: "#739EC9", cats: ["Bahan Baku Bar", "Bahan Baku Kitchen", "RnD", "Vendor Cake&Pastry", "Vendor Donat", "Galon", "Cup", "Mad Patty"], lo: 25, hi: 35, max: 38,
-    tip: "Cek harga beli, porsi resep, dan waste. Naikkan harga menu yang food cost-nya di atas target."},
-  {k: "labor", n: "Tenaga kerja", c: "#2F4A66", lo: 25, hi: 30, max: 33, tip: "Sesuaikan jadwal shift dengan jam ramai; kurangi lembur dan part time di jam sepi."},
-  {k: "sewa", n: "Sewa & saving", c: "#C9A227", cats: ["Saving"], lo: 6, hi: 10, max: 12, tip: "Biaya tetap: turunkan persentasenya dengan menaikkan omzet, bukan memotong biaya."},
-  {k: "util", n: "Utility (listrik, internet, gas, air)", c: "#E08A5B", cats: ["Listrik", "Internet", "Utilitas", "Gas"], lo: 3, hi: 5, max: 7, tip: "Cek peralatan yang menyala di luar jam operasional, suhu AC, dan kulkas yang bocor."},
-  {k: "ops", n: "Operasional & marketing", c: "#8FB39A", cats: ["Internal", "Inventori", "Maintanance & Repair", "Marketing", "Admin Bank", "Refund Customer"], lo: 8, hi: 15, max: 18, tip: "Pisahkan inventori (aset) dari biaya rutin; ukur hasil tiap pengeluaran marketing."},
-  {k: "lain", n: "Pajak & invoice bulan lalu", c: "#A99BCB", cats: ["Pajak", "Utang Invoice Bulan Sebelumnya"], tip: "Bukan biaya bulan ini secara operasional; invoice bulan lalu sebaiknya dicatat di bulan barangnya diterima."}
+  {k: "hpp", n: "HPP", c: "#739EC9", cats: ["Bahan Baku Bar", "Bahan Baku Kitchen", "RnD", "Vendor Cake&Pastry", "Vendor Donat", "Galon", "Cup", "Mad Patty"], t: 32,
+    tip: "Cek harga beli, porsi resep, dan waste. Naikkan harga menu yang food cost-nya di atas standar."},
+  {k: "labor", n: "Payroll", c: "#2F4A66", t: 16, tip: "Sesuaikan jadwal shift dengan jam ramai; kurangi lembur dan part time di jam sepi. Lihat rasio harian di panel tenaga kerja."},
+  {k: "sewa", n: "Sewa", c: "#C9A227", cats: ["Saving"], t: 8.2, tip: "Biaya tetap: turunkan persentasenya dengan menaikkan omzet, bukan memotong biaya."},
+  {k: "util", n: "Utilities", c: "#E08A5B", cats: ["Listrik", "Internet", "Utilitas", "Gas"], t: 6.5, tip: "Cek peralatan yang menyala di luar jam operasional, suhu AC, kulkas yang bocor, dan pemakaian gas."},
+  {k: "mkt", n: "Marketing", c: "#D46A8C", cats: ["Marketing"], t: 2, tip: "Ukur hasil tiap pengeluaran marketing (kunjungan, penjualan menu promo)."},
+  {k: "ops", n: "Operasional umum", c: "#8FB39A", cats: ["Internal", "Inventori", "Refund Customer"], t: 3, tip: "Pisahkan inventori (aset) dari biaya rutin; cek pembelian kecil yang berulang."},
+  {k: "mnt", n: "Maintenance", c: "#5FA8A0", cats: ["Maintanance & Repair"], t: 1.5, tip: "Servis rutin mesin espresso, grinder, dan kulkas lebih murah daripada perbaikan darurat."},
+  {k: "adm", n: "Admin/POS/bank", c: "#9AA5B1", cats: ["Admin Bank"], t: 0.8, tip: "Cek biaya MDR QRIS/kartu, langganan POS, dan biaya transfer antarbank."},
+  {k: "pajak", n: "PBB, penyusutan, bunga, pajak", c: "#A99BCB", cats: ["Pajak"], depr: true, t: 5, tip: "Termasuk penyusutan aset (non-kas) dari Keuangan → Aset."},
+  {k: "lain", n: "Invoice bulan lalu", c: "#C4C4C4", cats: ["Utang Invoice Bulan Sebelumnya"], tip: "Bukan biaya bulan ini secara operasional; invoice bulan lalu sebaiknya dicatat di bulan barangnya diterima."}
 ];
+const FNB_LABA = 25, fnbN = n => (Math.round(n * 10) / 10).toLocaleString("id-ID", {maximumFractionDigits: 1});
 function fnbBuckets(P) {
   const r = P.rev || 0, used = new Set(), out = FNB.map(b => {
     let v = 0;
     if (b.k === "labor") v = P.labor; else (b.cats || []).forEach(c => { v += P.byCat[c] || 0; used.add(c); });
+    if (b.depr && typeof deprTotal === "function") v += deprTotal(P.mo) || 0;
     return {...b, v, p: r ? v / r * 100 : 0};
   });
   // kategori lain yang belum terpetakan masuk Operasional
@@ -3380,7 +3387,7 @@ function fnbBuckets(P) {
   const cost = out.reduce((s, x) => s + x.v, 0), laba = r - cost;
   return {list: out, cost, laba, lp: r ? laba / r * 100 : 0, gross: r ? (r - out[0].v) / r * 100 : 0, prime: r ? (out[0].v + out[1].v) / r * 100 : 0};
 }
-const fnbState = (p, lo, hi, max) => hi == null ? ["", "Info"] : p <= hi ? ["ok", "Sehat"] : p <= max ? ["warn", "Waspada"] : ["crit", "Terlalu tinggi"];
+const fnbState = (p, t) => (p = Math.round(p * 10) / 10, t == null) ? ["", "Info"] : p <= t ? ["ok", "Sesuai standar"] : p <= t * 1.2 ? ["warn", "Sedikit di atas"] : ["crit", "Terlalu tinggi"];
 function donutSvg(parts, total, center, sub) {
   const R = 70, C = 2 * Math.PI * R; let off = 0;
   const segs = parts.filter(x => x.v > 0).map(x => { const len = total ? x.v / total * C : 0, s = `<circle r="${R}" cx="90" cy="90" fill="none" stroke="${x.c}" stroke-width="30" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 90 90)"><title>${esc(x.n)}: ${pct(total ? x.v / total : 0)}</title></circle>`; off += len; return s; }).join("");
@@ -3392,19 +3399,19 @@ function fnbDashboard(P) {
     return `<section class="panel"><div class="panel-h"><h2>Kesehatan bisnis F&B · ${monthLabel(P.mo)}</h2><span class="chip warn">Belum bisa dinilai</span></div>
       <div class="alert warn"><div class="grow"><b>Pengeluaran ${monthLabel(P.mo)} belum dicatat</b><div class="small">Pendapatan sudah ada (${rp(P.rev)}, ${esc(P.revSrc)}), tapi belum ada pengeluaran maupun gaji bulan ini. Persentase sehat dihitung setelah pengeluaran diisi di Keuangan → Pengeluaran.</div></div></div>
       <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-        <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${pct(P.rev ? P.hppOls / P.rev : 0)}</span><span class="small muted">${rp(P.hppOls)} · acuan 25–35%</span></div>
+        <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${pct(P.rev ? P.hppOls / P.rev : 0)}</span><span class="small muted">${rp(P.hppOls)} · standar ≤32%</span></div>
         ${h ? `<div class="kpi"><span class="eyebrow">HPP versi ROUNA</span><span class="v">${pct(P.rev ? h.hpp / P.rev : 0)}</span><span class="small muted">${rp(h.hpp)}${h.missList.length ? ` · ${h.missList.length} produk tanpa resep` : ""}</span></div>` : ""}
         <div class="kpi"><span class="eyebrow">Bahan terpakai (closing)</span><span class="v">${pct(P.rev ? (P.use + P.waste) / P.rev : 0)}</span><span class="small muted">${rp(P.use + P.waste)} · ${P.nClose} hari closing</span></div></div></section>`; }
   const B = fnbBuckets(P), r = P.rev, profit = {k: "laba", n: "Laba bersih", c: "#3E9E6A", v: Math.max(0, B.laba), p: B.lp};
   const parts = [...B.list, profit], total = B.laba >= 0 ? r : B.cost;
-  const labaSt = B.lp >= 15 ? ["ok", "Sangat sehat"] : B.lp >= 10 ? ["ok", "Sehat"] : B.lp >= 5 ? ["warn", "Tipis"] : ["crit", B.lp < 0 ? "Rugi" : "Kurang"];
-  const grossSt = B.gross >= 65 ? ["ok", "Sehat"] : B.gross >= 60 ? ["warn", "Waspada"] : ["crit", "Rendah"];
-  const primeSt = B.prime <= 60 ? ["ok", "Sehat"] : B.prime <= 65 ? ["warn", "Waspada"] : ["crit", "Terlalu tinggi"];
-  const rows = B.list.map(b => { const st = fnbState(b.p, b.lo, b.hi, b.max); return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.c};margin-right:8px"></span>${esc(b.n)}</td><td class="r num">${rp(b.v)}</td><td class="r num"><b>${b.p.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">${b.hi != null ? b.lo + "–" + b.hi + "%" : "-"}</td><td>${st[0] ? `<span class="chip ${st[0]}">${st[1]}</span>` : `<span class="chip">${st[1]}</span>`}</td></tr>`; }).join("");
+  const labaSt = B.lp >= FNB_LABA ? ["ok", "Sesuai standar"] : B.lp >= 10 ? ["warn", "Di bawah standar"] : ["crit", B.lp < 0 ? "Rugi" : "Jauh di bawah"];
+  const grossSt = B.gross >= 68 ? ["ok", "Sesuai standar"] : B.gross >= 63 ? ["warn", "Sedikit di bawah"] : ["crit", "Rendah"];
+  const primeSt = B.prime <= 48 ? ["ok", "Sesuai standar"] : B.prime <= 55 ? ["warn", "Sedikit di atas"] : ["crit", "Terlalu tinggi"];
+  const rows = B.list.map(b => { const st = fnbState(b.p, b.t); return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.c};margin-right:8px"></span>${esc(b.n)}</td><td class="r num">${rp(b.v)}</td><td class="r num"><b>${b.p.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">${b.t != null ? "≤" + fnbN(b.t) + "%" : "-"}</td><td>${st[0] ? `<span class="chip ${st[0]}">${st[1]}</span>` : `<span class="chip">${st[1]}</span>`}</td></tr>`; }).join("");
   const insights = [];
-  B.list.forEach(b => { if (b.hi == null || !b.v) return; const st = fnbState(b.p, b.lo, b.hi, b.max); if (st[0] !== "ok") insights.push([st[0], `${b.n} ${b.p.toFixed(1).replace(".", ",")}% (acuan ${b.lo}–${b.hi}%)`, `Kelebihan ± ${rp((b.p - b.hi) / 100 * r)} bulan ini. ${b.tip}`]); });
-  if (B.prime > 60) insights.push([primeSt[0], `Prime cost ${B.prime.toFixed(1).replace(".", ",")}% (acuan ≤60%)`, "HPP + tenaga kerja adalah biaya terbesar yang bisa dikendalikan. Di atas 65% hampir pasti menekan laba."]);
-  if (B.lp < 10) insights.push([labaSt[0], `Laba bersih ${B.lp.toFixed(1).replace(".", ",")}% (sehat ≥10%)`, B.lp < 0 ? "Bulan ini rugi. Mulai dari pos dengan status Terlalu tinggi di tabel." : "Target kafe yang dikelola baik 10–20% dari omzet."]);
+  B.list.forEach(b => { if (b.t == null || !b.v) return; const st = fnbState(b.p, b.t); if (st[0] !== "ok") insights.push([st[0], `${b.n} ${fnbN(b.p)}% (standar ${fnbN(b.t)}%)`, `Kelebihan ± ${rp((b.p - b.t) / 100 * r)} bulan ini. ${b.tip}`]); });
+  if (B.prime > 48) insights.push([primeSt[0], `Prime cost ${fnbN(B.prime)}% (standar ≤48%: HPP 32% + payroll 16%)`, "HPP + payroll adalah biaya terbesar yang bisa dikendalikan."]);
+  if (B.lp < FNB_LABA) insights.push([labaSt[0], `Laba bersih ${fnbN(B.lp)}% (target ${FNB_LABA}%)`, B.lp < 0 ? "Bulan ini rugi. Mulai dari pos dengan status Terlalu tinggi di tabel." : `Kurang ± ${rp((FNB_LABA - B.lp) / 100 * r)} dari target. Mulai dari pos yang di atas standar.`]);
   if (!insights.length) insights.push(["ok", "Semua pos dalam batas sehat", `Laba bersih ${B.lp.toFixed(1).replace(".", ",")}% dari omzet. Pertahankan disiplin pencatatan dan closing harian.`]);
   return `<section class="panel"><div class="panel-h"><h2>Kesehatan bisnis F&B · ${monthLabel(P.mo)}</h2><span class="chip ${labaSt[0]}">Laba ${labaSt[1]}</span></div>
     <div class="row" style="gap:20px;align-items:center;flex-wrap:wrap">
@@ -3412,14 +3419,14 @@ function fnbDashboard(P) {
       <div style="display:grid;gap:6px;flex:1 1 240px;min-width:0">${parts.map(x => `<div class="row small" style="gap:8px;flex-wrap:nowrap"><span style="width:12px;height:12px;border-radius:3px;background:${x.c};flex:none"></span><span class="grow">${esc(x.n)}</span><b class="num">${(x.k === "laba" ? B.lp : x.p).toFixed(1).replace(".", ",")}%</b></div>`).join("")}
         <div class="small muted">Persentase dari omzet ${rp(r)}. ${B.laba < 0 ? "Bulan ini rugi, jadi diagram menunjukkan komposisi biaya." : ""}</div></div>
       <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));flex:1 1 300px;min-width:0">
-        <div class="kpi"><span class="eyebrow">Gross margin</span><span class="v">${B.gross.toFixed(1).replace(".", ",")}%</span><span class="chip ${grossSt[0]}" style="justify-self:start">${grossSt[1]}</span><span class="small muted">acuan ≥65%</span></div>
-        <div class="kpi"><span class="eyebrow">Prime cost</span><span class="v">${B.prime.toFixed(1).replace(".", ",")}%</span><span class="chip ${primeSt[0]}" style="justify-self:start">${primeSt[1]}</span><span class="small muted">acuan ≤60%</span></div>
-        <div class="kpi"><span class="eyebrow">Laba bersih</span><span class="v" style="color:${B.laba < 0 ? "var(--crit)" : "inherit"}">${rpk(B.laba)}</span><span class="chip ${labaSt[0]}" style="justify-self:start">${labaSt[1]}</span><span class="small muted">${B.lp.toFixed(1).replace(".", ",")}% · acuan ≥10%</span></div></div>
+        <div class="kpi"><span class="eyebrow">Gross margin</span><span class="v">${B.gross.toFixed(1).replace(".", ",")}%</span><span class="chip ${grossSt[0]}" style="justify-self:start">${grossSt[1]}</span><span class="small muted">standar ≥68%</span></div>
+        <div class="kpi"><span class="eyebrow">Prime cost</span><span class="v">${B.prime.toFixed(1).replace(".", ",")}%</span><span class="chip ${primeSt[0]}" style="justify-self:start">${primeSt[1]}</span><span class="small muted">standar ≤48%</span></div>
+        <div class="kpi"><span class="eyebrow">Laba bersih</span><span class="v" style="color:${B.laba < 0 ? "var(--crit)" : "inherit"}">${rpk(B.laba)}</span><span class="chip ${labaSt[0]}" style="justify-self:start">${labaSt[1]}</span><span class="small muted">${fnbN(B.lp)}% · target ${FNB_LABA}%</span></div></div>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Kelompok biaya (standar F&B)</th><th class="r">Rupiah</th><th class="r">% omzet</th><th class="r">Acuan sehat</th><th>Status</th></tr></thead><tbody>${rows}
-      <tr class="tot"><td><b>Laba bersih (setelah sewa & saving)</b></td><td class="r num"><b>${rp(B.laba)}</b></td><td class="r num"><b>${B.lp.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">≥10%</td><td><span class="chip ${labaSt[0]}">${labaSt[1]}</span></td></tr></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Kelompok biaya</th><th class="r">Rupiah</th><th class="r">% omzet</th><th class="r">Standar</th><th>Status</th></tr></thead><tbody>${rows}
+      <tr class="tot"><td><b>Laba bersih</b></td><td class="r num"><b>${rp(B.laba)}</b></td><td class="r num"><b>${B.lp.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">≥${FNB_LABA}%</td><td><span class="chip ${labaSt[0]}">${labaSt[1]}</span></td></tr></tbody></table></div>
     <div style="display:grid;gap:8px">${insights.map(([c, t, d]) => `<div class="alert ${c}"><div class="grow"><b>${t}</b><div class="small">${d}</div></div></div>`).join("")}</div>
-    <p class="small muted" style="margin:0">Acuan umum industri kafe/restoran: HPP 25–35%, tenaga kerja 25–30%, prime cost ≤60%, sewa 6–10%, utility 3–5%, operasional 8–15%, laba bersih ≥10%. Laporan berbasis kas: biaya dihitung saat dibayar. Petty cash tidak dihitung karena hanya perpindahan kas.</p>
+    <p class="small muted" style="margin:0">Standar Rouna (% dari omzet): HPP 32%, payroll 16%, sewa 8,2%, utilities 6,5%, marketing 2%, operasional umum 3%, maintenance 1,5%, admin/POS/bank 0,8%, PBB/penyusutan/bunga/pajak 5% → total biaya 75%, target laba 25%. Penyusutan aset ikut dihitung di pos PBB/penyusutan. Laporan berbasis kas: biaya dihitung saat dibayar; petty cash tidak dihitung karena hanya perpindahan kas.</p>
   </section>`;
 }
 /* penjualan per produk sebulan: harian bila lengkap, selain itu rekap bulanan */
@@ -3939,12 +3946,12 @@ function laborDaily(mo) {
 function laborPanel(mo) {
   if (!canFin()) return ""; const L = laborDaily(mo), withRev = L.filter(x => x.rev > 0 && x.cost > 0);
   if (!L.some(x => x.cost)) return `<section class="panel"><h2>Biaya tenaga kerja vs penjualan</h2><div class="small muted">Butuh jadwal shift dan gaji pokok per orang (Keuangan → Gaji) untuk menghitung.</div></section>`;
-  const tc = withRev.reduce((s, x) => s + x.cost, 0), tr = withRev.reduce((s, x) => s + x.rev, 0), r = tr ? tc / tr : 0, cls = r <= .30 ? "ok" : r <= .33 ? "warn" : "crit";
+  const tc = withRev.reduce((s, x) => s + x.cost, 0), tr = withRev.reduce((s, x) => s + x.rev, 0), r = tr ? tc / tr : 0, cls = r <= .16 ? "ok" : r <= .192 ? "warn" : "crit";
   const show = L.filter(x => x.cost || x.rev).slice(-14), mx = Math.max(...show.map(x => x.rev ? x.cost / x.rev : 0), .4);
-  return `<section class="panel"><div class="panel-h"><div><h2>Biaya tenaga kerja vs penjualan</h2><span class="small muted">Perkiraan harian dari jadwal × (gaji pokok + tunjangan) ÷ 26, ditambah lembur disetujui</span></div>${tr ? `<span class="chip ${cls}">${pct(r)} · acuan 25–30%</span>` : ""}</div>
+  return `<section class="panel"><div class="panel-h"><div><h2>Biaya tenaga kerja vs penjualan</h2><span class="small muted">Perkiraan harian dari jadwal × (gaji pokok + tunjangan) ÷ 26, ditambah lembur disetujui</span></div>${tr ? `<span class="chip ${cls}">${pct(r)} · standar 16%</span>` : ""}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th class="r">Staf masuk</th><th class="r">Biaya</th><th class="r">Penjualan</th><th>Rasio</th></tr></thead><tbody>
-    ${show.slice().reverse().map(x => { const q = x.rev ? x.cost / x.rev : null; return `<tr><td>${fdate(x.date)}</td><td class="r num">${x.n}</td><td class="r num">${rpk(x.cost)}</td><td class="r num">${x.rev ? rpk(x.rev) : "-"}</td><td>${q == null ? '<span class="muted small">belum ada penjualan</span>' : `<div class="row" style="gap:8px;flex-wrap:nowrap"><div class="bar" style="width:110px;flex:none"><i style="width:${Math.min(100, q / mx * 100)}%;background:${q <= .30 ? "var(--ok)" : q <= .33 ? "var(--warn)" : "var(--crit)"}"></i></div><span class="num small">${pct(q)}</span></div>`}</td></tr>`; }).join("")}</tbody></table></div>
-    <p class="small muted" style="margin:0">Hari dengan rasio di atas 30% biasanya terlalu banyak staf untuk penjualan hari itu. Bandingkan jadwal dengan jam ramai. Total ${monthLabel(mo)}: ${rpk(tc)} dari penjualan ${rpk(tr)}.</p></section>`;
+    ${show.slice().reverse().map(x => { const q = x.rev ? x.cost / x.rev : null; return `<tr><td>${fdate(x.date)}</td><td class="r num">${x.n}</td><td class="r num">${rpk(x.cost)}</td><td class="r num">${x.rev ? rpk(x.rev) : "-"}</td><td>${q == null ? '<span class="muted small">belum ada penjualan</span>' : `<div class="row" style="gap:8px;flex-wrap:nowrap"><div class="bar" style="width:110px;flex:none"><i style="width:${Math.min(100, q / mx * 100)}%;background:${q <= .16 ? "var(--ok)" : q <= .192 ? "var(--warn)" : "var(--crit)"}"></i></div><span class="num small">${pct(q)}</span></div>`}</td></tr>`; }).join("")}</tbody></table></div>
+    <p class="small muted" style="margin:0">Hari dengan rasio jauh di atas 16% biasanya terlalu banyak staf untuk penjualan hari itu. Bandingkan jadwal dengan jam ramai. Total ${monthLabel(mo)}: ${rpk(tc)} dari penjualan ${rpk(tr)}.</p></section>`;
 }
 
 /* ----- aksi & form ----- */
@@ -4115,7 +4122,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261017114845";
+const BUILD = "20261017115315";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
