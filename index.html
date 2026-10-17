@@ -543,7 +543,7 @@ function render() {
   if (!ready) return;
   if (!me() || me().active === false) { $("#app").innerHTML = viewNoLink(); return; }
   if (!S.remembered) { S.remembered = true; if (me().username) rememberUser(me().username, me().name); }
-  const allowed = NAV.filter(n => n[2].includes(role()));
+  const allowed = NAV.filter(n => n[2].includes(role()) && !(realRole() === "manager" && ["sales", "keuangan"].includes(n[0])));
   if (!allowed.find(n => n[0] === S.view)) S.view = (role() === "crew" && allowed.find(n => n[0] === "absen")) ? "absen" : allowed[0][0];
   const low = lowItems().length;
   const navBtn = (n, cls) => `<button data-act="nav" data-v="${n[0]}" ${S.view === n[0] ? 'aria-current="page"' : ""}>${cls === "side" ? `<span class="nl">${ico(n[0])}${n[1]}</span>` : ico(n[0]) + `<span>${n[1]}</span>`}${n[0] === "stok" && low ? `<span class="badge">${low}</span>` : ""}${n[0] === "order" && pendingForMe() ? `<span class="badge">${pendingForMe()}</span>` : ""}${n[0] === "sop" && S.docs.filter(d => docOk(d) && !docAck(d)).length ? `<span class="badge">${S.docs.filter(d => docOk(d) && !docAck(d)).length}</span>` : ""}</button>`;
@@ -660,12 +660,11 @@ function guideData() {
     manager: {intro: "Kamu memegang kendali penuh: menyiapkan data, menyetujui order, dan membaca angka. Selesaikan persiapan awal sekali, lalu jalankan rutinitas harian.",
       setup: setupList,
       daily: [
-        {t: "Unggah laporan Olsera kemarin", d: "2 PDF wajib: Laporan Keseluruhan Penjualan dan Penjualan berdasarkan SKU.", done: salesDone, b: B("Penjualan", "nav", 'data-v="sales"')},
         {t: "Setujui dan pesan order bahan", d: "Cek pengajuan dari tim, setujui, lalu tandai sudah dipesan dengan supplier dan perkiraan tiba.", done: !S.orders.some(o => o.status === "diajukan" || o.status === "disetujui"), b: B("Order", "nav", 'data-v="order"')},
         {t: "Cek closing bar dan kitchen", d: "Lihat spoil dan selisih pemakaian. Tanyakan ke tim bila ada yang janggal.", done: !!(cl?.shifts?.bar && cl?.shifts?.kitchen), b: B("Closing", "nav", 'data-v="closing"')},
         {t: "Pantau voucher karyawan", d: "Pastikan compliment di Olsera sudah dicatat atas nama karyawan.", done: null, b: B("Voucher", "nav", 'data-v="absen"')},
         {t: "Cek SOP, kalibrasi, dan waste", d: "Kepatuhan checklist harian, shot kalibrasi, dan bahan yang paling banyak terbuang minggu ini.", done: null, b: B("Waste", "anWaste")}],
-      tips: ["Seminggu sekali buka Analitik: menu engineering, food cost vs target, dan bahan yang spoil tinggi.", "HPP Olsera hanya seakurat harga modal yang diisi di Olsera. Bandingkan selalu dengan pemakaian riil dari closing."]},
+      tips: ["Seminggu sekali buka Analitik → Waste: bahan yang paling banyak terbuang dan alasannya.", "Laporan penjualan dan keuangan dipegang Owner dan Finance. Fokusmu: stok, order, closing, jadwal, dan SOP."]},
     headbar: {intro: "Kamu penanggung jawab bar: bahan bar cukup, closing bar rapi, dan penjualan harian masuk ke sistem.",
       daily: [absen,
         {t: "Checklist opening bar & kalibrasi espresso", d: "Isi checklist opening, lalu catat shot kalibrasi sampai sesuai target sebelum melayani tamu.", done: !!S.sops.find(s => s.date === t)?.runs?.["bar-open"] && S.calibs.some(c => c.date === t), b: B("SOP", "nav", 'data-v="sop"')},
@@ -747,7 +746,7 @@ function viewHome() {
     mine.filter(k => !sd?.runs?.[k] && h >= 10).forEach(k => notes.push(`<div class="alert warn"><div class="grow"><b>${SOP_DEF[k][0]}</b> hari ini belum diisi</div><button class="btn sm" data-act="sop" data-k="${k}">Isi</button></div>`));
     if (["headbar", "manager"].includes(r) && h >= 10 && !S.calibs.some(c => c.date === t)) notes.push(`<div class="alert warn"><div class="grow"><b>Kalibrasi espresso</b> hari ini belum dicatat</div><button class="btn sm" data-act="calib">Catat</button></div>`); }
   if ((r === "gudang" || r === "manager") && S.orders.some(o => o.status === "dipesan")) notes.push(`<div class="alert acc"><div class="grow"><b>${S.orders.filter(o => o.status === "dipesan").length} order</b> sudah dipesan, tunggu barang datang</div><button class="btn sm" data-act="nav" data-v="order">Terima</button></div>`);
-  if ((r === "manager" || r === "finance") && (!lastSale || lastSale.date < addDays(t, -1))) notes.push(`<div class="alert warn"><div class="grow">Data penjualan Olsera kemarin belum diunggah</div><button class="btn sm" data-act="nav" data-v="sales">Unggah</button></div>`);
+  if ((realRole() === "owner" || r === "finance") && (!lastSale || lastSale.date < addDays(t, -1))) notes.push(`<div class="alert warn"><div class="grow">Data penjualan Olsera kemarin belum diunggah</div><button class="btn sm" data-act="nav" data-v="sales">Unggah</button></div>`);
   if (canFin()) { const dp = openPay().filter(p => p.due && p.due <= addDays(t, 3)); if (dp.length) notes.unshift(`<div class="alert ${dp.some(p => p.due < t) ? "crit" : "warn"}"><div class="grow"><b>${dp.length} invoice supplier</b> jatuh tempo ≤3 hari · ${rp(dp.reduce((s, p) => s + (+p.amt || 0) - paidOf(p), 0))}</div><button class="btn sm" data-act="goUtang">Lihat</button></div>`); }
   const closeChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
   const quick = [];
@@ -763,7 +762,7 @@ function viewHome() {
     <div class="kpi"><span class="eyebrow">Bahan menipis</span><span class="v" style="color:${low.length ? "var(--crit)" : "inherit"}">${low.length}</span></div>
     <div class="kpi"><span class="eyebrow">Order berjalan</span><span class="v">${waitApprove.length + waitRecv.length}</span></div>
     <div class="kpi"><span class="eyebrow">Hadir hari ini</span><span class="v">${inCount}<span class="small muted"> / ${Object.values(S.staff).filter(s => s.active !== false).length}</span></span></div>
-    <div class="kpi"><span class="eyebrow">Penjualan terakhir</span><span class="v">${lastSale ? rpk(lastSale.total) : "-"}</span><span class="small muted">${lastSale ? fdate(lastSale.date) : "belum ada"}</span></div>
+    ${realRole() === "manager" ? `<div class="kpi"><span class="eyebrow">Closing hari ini</span><span class="v">${Object.keys(cl?.shifts || {}).length}/2</span><span class="small muted">bar & kitchen</span></div>` : `<div class="kpi"><span class="eyebrow">Penjualan terakhir</span><span class="v">${lastSale ? rpk(lastSale.total) : "-"}</span><span class="small muted">${lastSale ? fdate(lastSale.date) : "belum ada"}</span></div>`}
   </div>
   <div class="grid2">
     <section class="panel"><div class="panel-h"><h2>Notifikasi</h2>${low.length ? `<button class="btn sm pri" data-act="orderLow">Order bahan menipis</button>` : ""}</div>
@@ -1403,11 +1402,12 @@ function dailySection(D) {
   </div>`;
 }
 function viewAnalytics() {
-  const seg = `<div class="seg">${[["menu", "Penjualan & menu"], ["waste", "Waste"]].map(([k, l]) => `<button data-act="ui" data-k="anTab" data-v="${k}" aria-pressed="${S.ui.anTab === k}">${l}</button>`).join("")}</div>`;
+  if (realRole() === "manager") S.ui.anTab = "waste";
+  const seg = `<div class="seg">${(realRole() === "manager" ? [["waste", "Waste"]] : [["menu", "Penjualan & menu"], ["waste", "Waste"]]).map(([k, l]) => `<button data-act="ui" data-k="anTab" data-v="${k}" aria-pressed="${S.ui.anTab === k}">${l}</button>`).join("")}</div>`;
   return seg + (S.ui.anTab === "waste" ? viewWaste() : viewAnalyticsMenu());
 }
 function viewAnalyticsMenu() {
-  if (!S.sales.length && !S.daily.length) return `<div class="pagehead"><h1>Analitik</h1></div><div class="empty"><b>Belum ada data penjualan</b><span>Unggah laporan Olsera dulu. Analitik produk, menu engineering, dan insight akan muncul dari data itu.</span><button class="btn pri" data-act="nav" data-v="sales">Unggah penjualan</button></div>`;
+  if (realRole() !== "manager" && !S.sales.length && !S.daily.length) return `<div class="pagehead"><h1>Analitik</h1></div><div class="empty"><b>Belum ada data penjualan</b><span>Unggah laporan Olsera dulu. Analitik produk, menu engineering, dan insight akan muncul dari data itu.</span><button class="btn pri" data-act="nav" data-v="sales">Unggah penjualan</button></div>`;
   const A = analyze(S.ui.range), D = S.daily.length ? dailyAnalysis(S.ui.range) : null, hasP = A.prods.length > 0, maxRev = A.byRev[0]?.rev || 1;
   const bottom = A.prods.filter(p => perfStatus(p, A) === "Tidak perform").sort((a, b) => a.rev - b.rev).slice(0, 10);
   if (!bottom.length) bottom.push(...[...A.prods].sort((a, b) => a.qty - b.qty).slice(0, 5));
@@ -2109,7 +2109,7 @@ function viewWaste() {
 
 /* ---------- RINGKASAN PAGI ---------- */
 function briefPanel() {
-  if (!["manager", "finance"].includes(role())) return "";
+  if (!["owner", "finance"].includes(realRole())) return "";
   const b = S.briefs[0]; if (!b || b.date < addDays(today(), -1)) return "";
   return `<section class="panel" style="border-color:var(--accent)"><div class="panel-h"><div><div class="eyebrow">Ringkasan pagi · ${fdate(b.date)}</div><h2>${esc(b.title || "Kondisi outlet")}</h2></div></div><div class="ai">${md(b.text || "")}</div></section>`;
 }
@@ -2572,7 +2572,8 @@ function confirmBox(title, text, label, fn) {
 }
 
 /* ---------- V2: target & prime cost, jadwal shift → gaji, utang supplier, notifikasi Telegram ---------- */
-const canFin = () => ["owner", "manager", "finance"].includes(realRole());
+const canFin = () => ["owner", "finance"].includes(realRole());
+const mgrNoFin = () => realRole() === "manager";
 const canShift = () => ["owner", "manager", "headbar"].includes(realRole());
 
 /* ===== Target & prime cost ===== */
@@ -2989,10 +2990,10 @@ function viewNotifSettings() {
       <label class="f">Nomor penerima (pisahkan dengan koma)<input name="targets" value="${esc((wa.targets || []).join(", "))}" placeholder="0812xxxx, 0813xxxx atau ID grup ...@g.us" required></label>
       <div class="row"><button class="btn pri" type="submit">Simpan</button>${wa.hasToken ? `<button type="button" class="btn" data-act="waTest">Kirim pesan tes</button><button type="button" class="btn" data-act="tgSend" data-k="morning">Kirim ringkasan sekarang</button><button type="button" class="btn ghost" data-act="waOff">Matikan WA</button>` : ""}</div></form>`;
   const tog = (k, l, d) => `<label class="li" style="cursor:pointer"><span class="grow"><b>${l}</b><span class="sub small muted">${d}</span></span><input type="checkbox" data-notif="${k}" ${nf[k] === false ? "" : "checked"} style="width:auto"></label>`;
-  return `<form class="panel" data-submit="target"><h2>Target & batas biaya</h2>
+  return `${mgrNoFin() ? "" : `<form class="panel" data-submit="target"><h2>Target & batas biaya</h2>
       <div class="fgrid two"><label class="f">Target omzet per bulan (Rp)<input name="tgtMonth" type="number" min="0" step="1000000" value="${tgtMonth() || ""}" placeholder="mis. 250000000"></label>
       <label class="f">Batas prime cost (%)<input name="primeMax" type="number" min="20" max="90" step="1" value="${primeMax()}"></label></div>
-      <div><button class="btn pri" type="submit">Simpan target</button></div></form>
+      <div><button class="btn pri" type="submit">Simpan target</button></div></form>`}
     <section class="panel"><div class="panel-h"><h2>Notifikasi WhatsApp</h2>${tg?.wa?.hasToken ? `<span class="chip ok">Aktif</span>` : ""}</div>${waPanel}</section>
     <section class="panel"><div class="panel-h"><h2>Notifikasi Telegram</h2><span class="chip">Opsional · gratis</span></div>${tgPanel}</section>
     <section class="panel"><h2>Jadwal notifikasi</h2><div class="list">
@@ -3759,7 +3760,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261016190954";
+const BUILD = "20261017101223";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
