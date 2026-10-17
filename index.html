@@ -789,6 +789,7 @@ function viewHome() {
   const recent = S.moves.slice(0, 2).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 6);
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
   <div class="qa">${quick.join("")}</div>
+  ${installCard()}
   ${targetCard()}
   ${briefPanel()}
   <div class="grid3">
@@ -3314,6 +3315,7 @@ function crewHome() {
   const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length;
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
   <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}</div>
+  ${installCard()}
   ${ur ? `<div class="alert acc"><div class="grow"><b>${ur} SOP</b> belum kamu baca</div><button class="btn sm" data-act="goDocs">Baca</button></div>` : ""}
   ${hrNotes().join("")}
   <section class="panel"><div class="panel-h"><h2>Hari ini</h2></div>
@@ -4006,6 +4008,22 @@ document.addEventListener("change", e => {
   if (f && f.dataset.k === "leave" && el.name === "from" && f.to.value < el.value) f.to.value = el.value;
 });
 
+/* ----- Pasang aplikasi di HP (PWA) ----- */
+let INSTALL_EVT = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); INSTALL_EVT = e; scheduleRender(); });
+window.addEventListener("appinstalled", () => { INSTALL_EVT = null; lsSet("rouna_inst", "1"); toast("ROUNA OS terpasang. Buka dari ikon di layar HP."); scheduleRender(); });
+const isStandalone = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function installCard() {
+  if (isStandalone() || lsGet("rouna_inst") === "1" || window.innerWidth > 900) return "";
+  const ios = isIOS(), safari = ios && !/crios|fxios|edgios/i.test(navigator.userAgent);
+  const how = INSTALL_EVT ? "" : ios ? (safari ? `Ketuk tombol <b>Bagikan</b> (kotak dengan panah ke atas) di bawah layar, lalu pilih <b>Tambahkan ke Layar Utama</b> → <b>Tambah</b>.` : `Buka alamat ini di <b>Safari</b>, lalu ketuk <b>Bagikan</b> → <b>Tambahkan ke Layar Utama</b>.`)
+    : `Ketuk menu <b>⋮</b> di kanan atas Chrome, lalu pilih <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>.`;
+  return `<div class="alert acc"><div class="grow"><b>Pasang ROUNA OS di HP</b><div class="small">${INSTALL_EVT ? "Ikon ROUNA muncul di layar HP dan terbuka layar penuh seperti aplikasi." : how}</div></div>${INSTALL_EVT ? `<button class="btn sm pri" data-act="pwaInstall">Pasang</button>` : ""}<button class="btn sm ghost" data-act="pwaHide" aria-label="Sembunyikan">Nanti</button></div>`;
+}
+ACT4.pwaInstall = async () => { if (!INSTALL_EVT) return; INSTALL_EVT.prompt(); const r = await INSTALL_EVT.userChoice.catch(() => null); if (r?.outcome === "accepted") lsSet("rouna_inst", "1"); INSTALL_EVT = null; render(); };
+ACT4.pwaHide = () => { lsSet("rouna_inst", "1"); render(); toast("Bisa dipasang kapan saja dari menu browser."); };
+
 /* ---------- events ---------- */
 const ACT = {
   nav: b => { S.view = b.dataset.v; S.ui.menuId = ""; S.ui.more = false; lsSet("runa_view", S.view); window.scrollTo(0, 0); render(); },
@@ -4147,7 +4165,7 @@ document.addEventListener("submit", e => { const f = e.target.closest("form[data
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261017120009";
+const BUILD = "20261017124106";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
