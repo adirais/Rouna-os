@@ -3038,7 +3038,7 @@ function viewNotifSettings() {
       ${tog("closing", "Pengingat closing · 23.15", "Hanya dikirim bila closing bar atau kitchen belum masuk")}</div></section>
     <form class="panel" data-submit="shiftDefs"><h2>Jam shift & aturan absensi</h2>
       <p class="small muted" style="margin:0">Default mengikuti SOP General. Kode dipakai di Jadwal shift. Shift yang selesai tengah malam tulis 00:00.</p>
-      <div class="fgrid">${[...shiftDefs(), ...Array(Math.max(1, 9 - shiftDefs().length)).fill(null)].slice(0, 9).map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d?.k || "")}" maxlength="3" style="width:60px" placeholder="Kode" aria-label="Kode"><input name="n${i}" value="${esc(d?.n || "")}" maxlength="24" style="flex:1 1 120px" placeholder="${d ? "" : "Shift tambahan (opsional)"}" aria-label="Nama"><input name="s${i}" type="time" value="${d?.s || ""}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d?.e || ""}" style="width:auto" aria-label="Selesai"></div>`).join("")}</div>
+      <div class="fgrid">${[...shiftDefs(), ...Array(Math.max(1, 12 - shiftDefs().length)).fill(null)].slice(0, 12).map((d, i) => `<div class="row"><input name="k${i}" value="${esc(d?.k || "")}" maxlength="3" style="width:60px" placeholder="Kode" aria-label="Kode"><input name="n${i}" value="${esc(d?.n || "")}" maxlength="24" style="flex:1 1 120px" placeholder="${d ? "" : "Shift tambahan (opsional)"}" aria-label="Nama"><input name="s${i}" type="time" value="${d?.s || ""}" style="width:auto" aria-label="Mulai"><input name="e${i}" type="time" value="${d?.e || ""}" style="width:auto" aria-label="Selesai"></div>`).join("")}</div>
       <div class="fgrid two" style="max-width:640px"><label class="f">Toleransi telat per shift (menit)<input name="tol" type="number" min="0" max="120" value="${tolTelat()}"></label>
       <label class="f">Potongan per menit telat (Rp)<input name="potMenit" type="number" min="0" step="100" value="${potMenitDefault() || ""}" placeholder="0 = tidak dipotong"></label>
       <label class="f">Tarif lembur per jam (Rp)<input name="lemburJam" type="number" min="0" step="1000" value="${lemburDefault()}"></label></div>
@@ -3077,7 +3077,7 @@ const SUBMIT2 = {
   salary: submitSalary, invoice: submitInvoice, payInv: submitPayInv, sku: () => submitSku(), pair: () => submitPair(), docPic: submitDocPic, olsMonth: () => submitOlsMonth(),
   target: async f => { if (await guard(() => mergeDoc("settings/app", {tgtMonth: num(f.tgtMonth.value), primeMax: Math.min(90, Math.max(20, num(f.primeMax.value) || 48))}, {}))) toast("Target tersimpan."); },
   shiftDefs: async f => {
-    const list = []; for (let i = 0; i < 9; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
+    const list = []; for (let i = 0; i < 12; i++) { const k = (f["k" + i]?.value || "").trim().toUpperCase(), n = (f["n" + i]?.value || "").trim(), s = f["s" + i]?.value, e = f["e" + i]?.value; if (k && !LEAVE[k] && n && s && e && !list.some(x => x.k === k)) list.push({k, n, s, e}); }
     if (!list.length) return toast("Isi minimal satu shift.");
     if (await guard(() => S.db.doc("settings/app").update({shifts: list, tolTelat: Math.max(0, num(f.tol.value)), potMenit: Math.max(0, num(f.potMenit.value)), lemburJam: Math.max(0, num(f.lemburJam.value))}))) toast("Jam shift tersimpan.");
   },
