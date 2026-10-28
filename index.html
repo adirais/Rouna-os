@@ -773,7 +773,7 @@ function viewHome() {
   if (par.length) notes.push(`<div class="alert acc"><div class="grow"><b>${par.length} bahan</b> di ${r === "kitchen" ? "kitchen" : "bar"} di bawah par harian</div><button class="btn sm" data-act="takePar">Ambil sesuai par</button></div>`);
   if (r === "manager" && waitApprove.length) notes.push(`<div class="alert acc"><div class="grow"><b>${waitApprove.length} pengajuan order</b> menunggu persetujuanmu</div><button class="btn sm" data-act="nav" data-v="order">Buka</button></div>`);
   { const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length; if (ur) notes.push(`<div class="alert acc"><div class="grow"><b>${ur} SOP</b> belum kamu baca</div><button class="btn sm" data-act="goDocs">Baca</button></div>`); }
-  if (["manager", "finance"].includes(r)) priceAlerts().slice(0, 3).forEach(x => notes.push(`<div class="alert crit"><div class="grow"><b>Harga ${esc(x.i.name)}</b> naik ${pct(x.chg)} dalam 30 hari<div class="small">${rp(x.base)} → ${rp(x.cur)} per ${esc(x.i.unit)} · ${recipesUsing(x.i.id).length} produk terdampak</div></div><button class="btn sm" data-act="priceGo" data-id="${x.i.id}">Lihat</button></div>`));
+  if (["manager", "finance", "headbar"].includes(r)) priceAlerts().slice(0, 3).forEach(x => notes.push(`<div class="alert crit"><div class="grow"><b>Harga ${esc(x.i.name)}</b> naik ${pct(x.chg)} dalam 30 hari<div class="small">${rp(x.base)} → ${rp(x.cur)} per ${esc(x.i.unit)} · ${recipesUsing(x.i.id).length} produk terdampak</div></div><button class="btn sm" data-act="priceGo" data-id="${x.i.id}">Lihat</button></div>`));
   { const sd = S.sops.find(s => s.date === t), h = new Date().getHours(), mine = r === "kitchen" ? ["kitchen-open"] : r === "headbar" ? ["bar-open"] : r === "manager" ? ["bar-open", "kitchen-open"] : [];
     mine.filter(k => !sd?.runs?.[k] && h >= 10).forEach(k => notes.push(`<div class="alert warn"><div class="grow"><b>${SOP_DEF[k][0]}</b> hari ini belum diisi</div><button class="btn sm" data-act="sop" data-k="${k}">Isi</button></div>`));
     if (["headbar", "manager"].includes(r) && h >= 10 && !S.calibs.some(c => c.date === t)) notes.push(`<div class="alert warn"><div class="grow"><b>Kalibrasi espresso</b> hari ini belum dicatat</div><button class="btn sm" data-act="calib">Catat</button></div>`); }
@@ -1060,7 +1060,7 @@ function viewSales() {
   ${day ? `<section class="panel"><div class="panel-h"><h2>Detail ${fdate(day.date)}</h2><div class="row"><span class="small muted">${esc(day.file || "")}</span>${isMgr() ? `<button class="btn sm danger" data-act="delSales" data-d="${day.date}">Hapus hari ini</button>` : ""}</div></div>
     <div class="list">${(() => { const dl = S.daily.find(x => x.date === day.date); return hppRounaRows([day], dl?.pl?.revenue || day.total, dl?.pl?.hpp); })()}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th>${skuHas(day) ? `<th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Selisih</th>` : ""}<th>Resep</th></tr></thead><tbody>
-    ${[...(day.rows || [])].sort((a, b) => b.rev - a.rev).map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(day, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`;
+    ${[...(day.rows || [])].sort((a, b) => b.rev - a.rev).map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(day, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : canRecipe() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`;
 }
 function theoUsage(date) {
   const out = {}, s = S.sales.find(x => x.date === date); let noRec = 0;
@@ -2150,7 +2150,9 @@ function briefPanel() {
 }
 
 /* ---------- MENU & COGS ---------- */
-const canCost = () => ["manager", "finance"].includes(role());
+const canCost = () => ["manager", "finance", "headbar"].includes(role());
+const canRecipe = () => ["manager", "headbar"].includes(role());
+const canFcSet = () => ["manager", "finance"].includes(role());
 const TYPE_ORDER = {Minuman: 0, Makanan: 1, Lainnya: 2};
 function sold30() {
   const cut = addDays(today(), -29), o = {};
@@ -2173,7 +2175,7 @@ function viewMenu() {
   if (tab === "menu" && S.ui.menuId && S.recipes[S.ui.menuId]) return viewMenuDetail(S.ui.menuId);
   const rows = menuRows(), priced = rows.filter(m => m.fc != null);
   const head = `<div class="pagehead"><div><div class="eyebrow">${rows.length} menu · ${prepItems().length} bahan olahan · ${itemsArr().filter(i => !i.prep).length} bahan baku</div><h1>Menu</h1></div>
-    <div class="row">${canCost() ? `<button class="btn" data-act="fcSet">Target food cost</button>${S.dl && rows.length ? `<button class="btn" data-act="menuCsv">Unduh CSV</button>` : ""}` : ""}${isMgr() ? (tab === "menu" ? `<button class="btn pri" data-act="recipe">Tambah menu</button>` : tab === "olahan" ? `<button class="btn pri" data-act="prep">Tambah bahan olahan</button>` : `<button class="btn pri" data-act="item">Tambah bahan</button>`) : tab === "bahan" && canCost() ? `<button class="btn pri" data-act="item">Tambah bahan</button>` : ""}</div></div>
+    <div class="row">${canFcSet() ? `<button class="btn" data-act="fcSet">Target food cost</button>` : ""}${canCost() && S.dl && rows.length ? `<button class="btn" data-act="menuCsv">Unduh CSV</button>` : ""}${isMgr() ? (tab === "menu" ? `<button class="btn pri" data-act="recipe">Tambah menu</button>` : tab === "olahan" ? `<button class="btn pri" data-act="prep">Tambah bahan olahan</button>` : `<button class="btn pri" data-act="item">Tambah bahan</button>`) : tab === "menu" && canRecipe() ? `<button class="btn pri" data-act="recipe">Tambah menu</button>` : tab === "bahan" && canCost() ? `<button class="btn pri" data-act="item">Tambah bahan</button>` : ""}</div></div>
     <div class="seg">${tabs.map(([k, l]) => `<button data-act="ui" data-k="menuTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div>`;
   if (tab === "olahan") return head + viewPreps();
   if (tab === "bahan" && canCost()) return head + viewItemsCost();
@@ -2201,7 +2203,7 @@ function viewMenu() {
     ${over.length > 5 ? `<button class="btn sm ghost" data-act="ui" data-k="mflag" data-v="over" style="justify-self:start">Lihat semua ${over.length} menu di atas target</button>` : ""}
     ${zeroM.length ? `<div class="alert warn"><div class="grow"><b>${zeroM.length} menu</b> memakai bahan yang harganya masih kosong, jadi HPP-nya terlalu rendah<div class="small">${zeroM.slice(0, 6).map(m => esc(m.name)).join(", ")}</div></div><button class="btn sm" data-act="ui" data-k="menuTab" data-v="bahan">Isi harga</button></div>` : ""}
     ${noPrice.length ? `<div class="alert warn"><div class="grow"><b>${noPrice.length} menu</b> belum punya harga jual<div class="small">${noPrice.slice(0, 6).map(m => esc(m.name)).join(", ")}</div></div></div>` : ""}
-    ${missing.length ? `<div class="alert acc"><div class="grow"><b>${missing.length} produk terjual di Olsera</b> belum punya resep<div class="row" style="margin-top:6px">${missing.slice(0, 24).map(n => isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(n)}">+ ${esc(n)}</button>` : `<span class="chip">${esc(n)}</span>`).join("")}</div></div></div>` : ""}
+    ${missing.length ? `<div class="alert acc"><div class="grow"><b>${missing.length} produk terjual di Olsera</b> belum punya resep<div class="row" style="margin-top:6px">${missing.slice(0, 24).map(n => canRecipe() ? `<button class="btn sm" data-act="recipe" data-p="${esc(n)}">+ ${esc(n)}</button>` : `<span class="chip">${esc(n)}</span>`).join("")}</div></div></div>` : ""}
   </div></section>` : "";
   const tools = `<section class="panel" style="gap:10px"><div class="row"><div style="flex:1 1 200px"><input id="m-q" data-ui="mq" value="${esc(u.mq || "")}" placeholder="Cari menu atau kategori…" aria-label="Cari menu"></div>
     <div class="seg">${[["", "Semua"], ...types.map(t => [t, t])].map(([v, l]) => `<button data-act="ui" data-k="mtype" data-v="${v}" aria-pressed="${(u.mtype || "") === v}">${l}</button>`).join("")}</div>
@@ -2227,7 +2229,7 @@ function viewMenuDetail(id) {
   if (cost && m.qty) ins.push(`30 hari terakhir terjual ${fq(m.qty)} porsi, omzet ${rp(m.rev)}${m.margin != null ? `, kontribusi margin sekitar ${rp(m.margin * m.qty)}` : ""}.`);
   al.forEach(x => ins.push(`Harga <b>${esc(x.i.name)}</b> naik ${pct(x.chg)} dalam 30 hari.`));
   return `<div><button class="btn sm ghost" data-act="ui" data-k="menuId" data-v="">← Semua menu</button></div>
-  <div class="pagehead"><div><div class="eyebrow">${esc(m.type)} · ${esc(m.cat)}</div><h1>${esc(m.name)}</h1></div><div class="row">${isMgr() ? `<button class="btn pri" data-act="recipe" data-id="${id}">Ubah resep</button>` : ""}</div></div>
+  <div class="pagehead"><div><div class="eyebrow">${esc(m.type)} · ${esc(m.cat)}</div><h1>${esc(m.name)}</h1></div><div class="row">${canRecipe() ? `<button class="btn pri" data-act="recipe" data-id="${id}">Ubah resep</button>` : ""}</div></div>
   ${cost ? `<div class="grid3">
     <div class="kpi"><span class="eyebrow">Harga jual</span><span class="v">${m.price ? rp(m.price) : "-"}</span></div>
     <div class="kpi"><span class="eyebrow">HPP per porsi</span><span class="v">${rp(m.hpp)}</span></div>
@@ -2557,7 +2559,7 @@ function modalRecipe(id, product) {
     <p class="small muted" style="margin:0">Takaran bahan untuk satu porsi, dalam satuan bahan tersebut (mis. 18 g kopi, 150 ml susu, 1 pcs cup).</p>
     <div class="lines" id="lines">${rows}</div>
     <button type="button" class="btn sm" data-act="addLine" data-k="recipe">+ Tambah bahan</button>
-    <div class="foot">${id ? `<button type="button" class="btn danger" data-act="delRecipe" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan resep</button></div></form>`);
+    <div class="foot">${id && isMgr() ? `<button type="button" class="btn danger" data-act="delRecipe" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan resep</button></div></form>`);
 }
 async function submitRecipe(form) {
   const product = form.product.value.trim(), lines = readLines(form).map(l => ({itemId: l.itemId, qty: l.qty}));
@@ -3262,7 +3264,7 @@ function monthDetail(m) {
       <div class="kpi"><span class="eyebrow">Pembayaran</span><span class="small">${Object.entries(D.payments || {}).map(([k, v]) => esc(k) + " " + rpk(v)).join("<br>")}</span></div></div>` : `<div class="small muted">Laporan Keseluruhan Penjualan ${monthLabel(mo)} belum diunggah.</div>`}
     <div class="list">${K ? hppRounaRows([K], D?.pl?.revenue, D?.pl?.hpp) : `<div class="small muted">Laporan Penjualan berdasarkan SKU ${monthLabel(mo)} belum diunggah.</div>`}</div>
     ${K ? `<div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th><th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Selisih</th><th>Resep</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(K, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : isMgr() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.cat || "")}</td><td class="r num">${fq(r.qty)}</td><td class="r num">${rp(r.rev)}</td>${skuCols(K, r)}<td>${recipeOf(r.name) ? '<span class="chip ok">ada</span>' : canRecipe() ? `<button class="btn sm" data-act="recipe" data-p="${esc(r.name)}">+ resep</button>` : '<span class="chip">belum</span>'}</td></tr>`).join("")}</tbody></table></div>` : ""}
   </div>`;
 }
 
@@ -4072,7 +4074,7 @@ const ACT = {
   prod: b => modalProd(b.dataset.id),
   goDocs: () => { S.view = "sop"; S.ui.sopTab = "buku"; S.ui.docId = ""; lsSet("runa_view", "sop"); window.scrollTo(0, 0); render(); },
   anWaste: () => { S.view = "analitik"; S.ui.anTab = "waste"; lsSet("runa_view", "analitik"); window.scrollTo(0, 0); render(); },
-  priceGo: b => { S.view = "keuangan"; S.ui.finTab = "harga"; S.ui.priceItem = b.dataset.id; lsSet("runa_view", "keuangan"); window.scrollTo(0, 0); render(); },
+  priceGo: b => { if (role() === "headbar") { S.view = "menu"; S.ui.menuTab = "bahan"; lsSet("runa_view", "menu"); } else { S.view = "keuangan"; S.ui.finTab = "harga"; S.ui.priceItem = b.dataset.id; lsSet("runa_view", "keuangan"); } window.scrollTo(0, 0); render(); },
   goFin: b => { S.view = "keuangan"; S.ui.finTab = b.dataset.v || "pl"; lsSet("runa_view", "keuangan"); window.scrollTo(0, 0); render(); },
   goMenu: b => { S.view = "menu"; S.ui.menuTab = b.dataset.v || "menu"; S.ui.menuId = ""; lsSet("runa_view", "menu"); window.scrollTo(0, 0); render(); },
   fcSet: () => modalFc(),

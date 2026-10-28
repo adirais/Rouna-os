@@ -24,7 +24,9 @@ Setiap perubahan yang di-commit ke `main` tayang otomatis dalam 1–2 menit.
 | Kas harian | Owner, Manager, Finance, Headbar |
 | Pengeluaran, gaji, brief pagi | Owner, Manager, Finance |
 | Pengaturan (target food cost, dll.) | Diubah oleh Owner, Manager, Finance |
-| Resep/menu & dokumen SOP | Diubah oleh Owner & Manager; semua staf bisa membaca |
+| HPP, margin, food cost, harga bahan baku | Owner, Manager, Finance, Headbar |
+| Resep/menu | Ditambah & diubah oleh Owner, Manager, Headbar (hapus: Owner & Manager); semua staf bisa membaca |
+| Dokumen SOP | Diubah oleh Owner, Manager, Finance; semua staf bisa membaca |
 | Akun staf | Pengaturan → Staf (Owner/Manager). Akun Owner hanya diatur Owner |
 | Stok, order, closing, absensi, waste | Semua staf aktif |
 
