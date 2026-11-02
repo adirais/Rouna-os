@@ -783,7 +783,7 @@ function viewHome() {
   notes.push(...hrNotes());
   const closeChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
   const quick = [];
-  if (["headbar", "kitchen", "manager"].includes(r)) quick.push(qa("move", "take", "out", "Ambil stok"), qa("waste", "", "waste", "Waste"), qa("closing", "", "closing", "Closing"));
+  if (["headbar", "kitchen", "manager"].includes(r)) quick.push(qa("move", "take", "out", "Ambil stok"), qa("move", "inArea", "in", "Masuk area"), qa("waste", "", "waste", "Waste"), qa("closing", "", "closing", "Closing"));
   if (["gudang", "manager"].includes(r)) quick.push(qa("move", "in", "in", "Barang masuk"));
   quick.push(qa("newOrder", "", "order", "Order"), qa("absenNow", "", "absen", "Absen"));
   const recent = S.moves.slice(0, 2).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 6);
@@ -816,7 +816,7 @@ function myAttChip() {
   if (!a.out) return `<span class="chip ok">Masuk ${ftime(a.in.ts)}</span>`;
   return `<span class="chip">${ftime(a.in.ts)}–${ftime(a.out.ts)}</span>`;
 }
-const MOVE_LBL = {in: ["Masuk gudang", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
+const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
 function moveRow(m) {
   const it = S.items[m.itemId]; const l = MOVE_LBL[m.t] || [m.t, ""];
   return `<div class="li"><div class="grow"><b>${esc(it?.name || "Bahan dihapus")}</b><span class="sub small muted">${fdt(m.ts)} · ${esc(S.staff[m.by]?.name || "-")}${m.note ? " · " + esc(m.note) : ""}</span></div><span class="chip ${l[1]}">${l[0]}</span><span class="num">${m.qty > 0 && !["spoil", "waste"].includes(m.t) ? "+" : ""}${fq(m.qty)} ${esc(it?.unit || "")}</span></div>`;
@@ -836,7 +836,7 @@ function viewStock() {
   const recent = S.moves.slice(0, 3).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 25);
   if (!itemsArr().length) return `<div class="pagehead"><h1>Stok</h1></div><div class="empty"><b>Belum ada bahan</b><span>Daftarkan bahan baku dulu di Menu → Bahan baku & harga, lengkap dengan satuan, minimum stok, dan harga per satuan.</span>${isMgr() ? `<button class="btn pri" data-act="goMenu" data-v="bahan">Buka bahan baku</button>` : ""}</div>`;
   return `<div class="pagehead"><div><div class="eyebrow">Nilai stok · ${rpk(value)}</div><h1>Stok</h1></div>
-    <div class="row">${canIn ? `<button class="btn pri" data-act="move" data-k="in">Barang masuk</button><button class="btn" data-act="move" data-k="opname">Opname gudang</button>` : ""}${canTake ? `${parPreset().length ? `<button class="btn" data-act="takePar">Isi area sampai par (${parPreset().length})</button>` : ""}<button class="btn ${canIn ? "" : "pri"}" data-act="move" data-k="take">Ambil dari gudang</button><button class="btn" data-act="move" data-k="ret">Retur ke gudang</button>${r !== "gudang" && prepItems().length ? `<button class="btn" data-act="prod">Produksi batch</button>` : ""}` : ""}</div></div>
+    <div class="row">${canIn ? `<button class="btn pri" data-act="move" data-k="in">Barang masuk</button><button class="btn" data-act="move" data-k="opname">Opname gudang</button>` : ""}${canTake ? `${parPreset().length ? `<button class="btn" data-act="takePar">Isi area sampai par (${parPreset().length})</button>` : ""}<button class="btn ${canIn ? "" : "pri"}" data-act="move" data-k="take">Ambil dari gudang</button><button class="btn" data-act="move" data-k="inArea">Masuk ke area</button><button class="btn" data-act="move" data-k="ret">Retur ke gudang</button>${r !== "gudang" && prepItems().length ? `<button class="btn" data-act="prod">Produksi batch</button>` : ""}` : ""}</div></div>
   <section class="panel">
     <div class="row"><div style="flex:1 1 200px"><input id="f-q" data-ui="q" value="${esc(u.q)}" placeholder="Cari bahan…" aria-label="Cari bahan"></div>
       <select id="f-cat" data-ui="cat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${cats.map(c => `<option ${u.cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
@@ -866,6 +866,7 @@ const MOVE_FORMS = {
   in: ["Barang masuk ke gudang", "Catat barang yang diterima di gudang. Isi harga per satuan jika berubah, harga bahan ikut diperbarui."],
   take: ["Ambil dari gudang", "Pindahkan bahan dari gudang ke bar atau kitchen. Stok gudang berkurang, stok area bertambah."],
   ret: ["Retur ke gudang", "Kembalikan bahan dari area ke gudang."],
+  inArea: ["Barang masuk ke area", "Untuk bahan yang langsung dibawa ke bar atau kitchen tanpa lewat gudang, misalnya belanja harian. Stok area bertambah, stok gudang tidak berubah."],
   opname: ["Opname gudang", "Isi jumlah fisik hasil hitung di gudang. Sistem mencatat selisihnya."]
 };
 function modalMove(k, preset) {
@@ -875,7 +876,7 @@ function modalMove(k, preset) {
   openModal(`<form data-submit="move" data-k="${k}" class="modal" role="dialog" aria-label="${title}">
     <div class="modal-h"><h2>${title}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">${hint}</p>
-    ${k === "in" ? `<label class="f">Supplier / catatan<input id="mv-note" name="note" maxlength="80" placeholder="mis. Toko Sumber Jaya, nota 0123"></label><label class="row small"><input type="checkbox" id="mv-price" data-act="togglePrice"> Isi harga per satuan</label>` : `<label class="f">Catatan<input id="mv-note" name="note" maxlength="80"></label>`}
+    ${k === "inArea" ? `<label class="f">Dari mana / catatan<input id="mv-note" name="note" maxlength="80" required placeholder="mis. belanja Alfamidi, titipan supplier"></label>` : k === "in" ? `<label class="f">Supplier / catatan<input id="mv-note" name="note" maxlength="80" placeholder="mis. Toko Sumber Jaya, nota 0123"></label><label class="row small"><input type="checkbox" id="mv-price" data-act="togglePrice"> Isi harga per satuan</label>` : `<label class="f">Catatan<input id="mv-note" name="note" maxlength="80"></label>`}
     <div class="lines" id="lines">${rows}</div>
     <button type="button" class="btn sm" data-act="addLine" data-k="${k}">+ Tambah baris</button>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
@@ -892,6 +893,7 @@ async function submitMove(form) {
     for (const l of lines) {
       const s = stockOf(l.itemId);
       if (k === "in") { await setStock(l.itemId, {gudang: (s.gudang || 0) + l.qty}); if (l.price > 0) { await logPrice(l.itemId, l.price, "barang masuk" + (note ? " · " + note : "")); await S.db.doc("items/" + l.itemId).update({cost: l.price}); } log.push({t: "in", itemId: l.itemId, qty: l.qty, note, price: l.price || +S.items[l.itemId].cost || 0}); }
+      if (k === "inArea") { await setStock(l.itemId, {area: (s.area || 0) + l.qty}); log.push({t: "inArea", itemId: l.itemId, qty: l.qty, note}); }
       if (k === "take") { await setStock(l.itemId, {gudang: s.gudang - l.qty, area: (s.area || 0) + l.qty}); log.push({t: "take", itemId: l.itemId, qty: l.qty, note}); }
       if (k === "ret") { await setStock(l.itemId, {gudang: (s.gudang || 0) + l.qty, area: s.area - l.qty}); log.push({t: "ret", itemId: l.itemId, qty: l.qty, note}); }
       if (k === "opname") { const diff = l.qty - (s.gudang || 0); await setStock(l.itemId, {gudang: l.qty}); log.push({t: "opname", itemId: l.itemId, qty: diff, note: (note ? note + " · " : "") + "fisik " + fq(l.qty)}); }
@@ -3322,7 +3324,7 @@ function crewHome() {
   const mineMoves = S.moves.filter(m => m.date === t).flatMap(m => Object.values(m.list || {})).filter(e => e.by === S.me).sort((a, b) => b.ts - a.ts).slice(0, 6);
   const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length;
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
-  <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}</div>
+  <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("move", "inArea", "in", "Masuk area")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}</div>
   ${installCard()}
   ${ur ? `<div class="alert acc"><div class="grow"><b>${ur} SOP</b> belum kamu baca</div><button class="btn sm" data-act="goDocs">Baca</button></div>` : ""}
   ${hrNotes().join("")}
@@ -4247,7 +4249,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") navigator.se
       sel.value = o.v; inp.value = o.t; inp.setCustomValidity(""); close();
       sel.dispatchEvent(new Event("change", {bubbles: true}));
       const next = wrap.parentNode && wrap.parentNode.querySelector("input[name=qty], input[type=number]");
-      if (next && !next.value) setTimeout(() => next.focus(), 0);
+      if (next && !next.value) next.focus();
     }
     function move(d) {
       if (!shown.length) return; act = (act + d + shown.length) % shown.length;
