@@ -2451,7 +2451,7 @@ function viewAbsen() {
     ${!mine?.in ? `<p class="small muted" style="margin:0">Ambil selfie di area outlet sebagai bukti kehadiran.</p><div><button class="btn pri" data-act="absenNow">Check-in dengan selfie</button></div>` : !mine.out ? `<div><button class="btn pri" data-act="absenNow">Check-out dengan selfie</button></div>` : `<div class="small muted">Absensi hari ini lengkap. Sampai besok.</div>`}</section>
   ${viewVoucher()}
   ${["manager", "headbar", "finance"].includes(role()) ? `<section class="panel"><h2>Kehadiran hari ini</h2><div class="list">${staff.map(([id, s]) => { const r = att?.rec?.[id]; return `<div class="li"><div class="row" style="gap:10px;flex-wrap:nowrap;min-width:0">${pic(r?.in) || '<span class="thumb"></span>'}<div class="grow" style="min-width:0"><b>${esc(s.name)}</b><span class="sub small muted">${ROLES[s.role]}</span></div></div>
-    <span>${r?.in ? `<span class="chip ok">${ftime(r.in.ts)}</span> ${geoChip(r.in)}` : (() => { const lr = leaveReq(id, t), k = lr && lr.status === "disetujui" ? (lr.code || LEAVE_OF[lr.type]) : planOf(t)[id]; return lr && lr.status === "menunggu" ? `<span class="chip warn">${lr.type === "sakit" ? "Sakit" : "Izin"} · menunggu</span>` : k && LEAVE[k] ? `<span class="chip">${esc(LEAVE[k][0])}</span>` : '<span class="chip">Belum</span>'; })()} ${r?.out ? `<span class="chip">${ftime(r.out.ts)}</span> ${geoChip(r.out)}` : ""}</span>${pic(r?.out)}</div>`; }).join("")}</div></section>` : ""}
+    <span>${r?.in ? `<span class="chip ok">${ftime(r.in.ts)}</span> ${geoChip(r.in)}` : (() => { const lr = leaveReq(id, t), k = lr && lr.status === "disetujui" ? (lr.code || LEAVE_OF[lr.type]) : planOf(t)[id]; const tr = att?.try?.[id]; return lr && lr.status === "menunggu" ? `<span class="chip warn">${lr.type === "sakit" ? "Sakit" : "Izin"} · menunggu</span>` : k && LEAVE[k] ? `<span class="chip">${esc(LEAVE[k][0])}</span>` : tr ? `<span class="chip crit" title="${esc(tr.reason)}">Gagal absen ${ftime(tr.ts)}: ${esc(tr.reason)}</span>` : '<span class="chip">Belum</span>'; })()} ${r?.out ? `<span class="chip">${ftime(r.out.ts)}</span> ${geoChip(r.out)}` : ""}</span>${pic(r?.out)}</div>`; }).join("")}</div></section>` : ""}
   ${recap}`;
 }
 function modalAbsen() {
@@ -2464,7 +2464,8 @@ function modalAbsen() {
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
     <div class="row"><span id="geo-status" class="chip">Mengambil lokasi…</span><button type="button" class="btn sm ghost" data-act="geoRetry">Ambil ulang lokasi</button></div>
     <div id="geo-block" class="alert crit" hidden><div class="grow small"><b>Absen hanya bisa dilakukan di ${esc(S.settings.outlet || "Coffee Rouna")}.</b> Pastikan kamu di outlet, GPS/lokasi HP menyala dan browser diizinkan memakai lokasi, lalu tekan "Ambil ulang lokasi".</div></div>
-    <label class="btn" for="selfie" style="justify-self:start;cursor:pointer">Ambil selfie</label>
+    <div class="row"><button type="button" class="btn pri" data-act="camOpen">Ambil selfie</button><label class="btn sm ghost" for="selfie" style="cursor:pointer">Pakai aplikasi kamera</label></div>
+    <div id="cam-box" hidden><video id="cam-v" playsinline muted autoplay style="width:100%;max-width:300px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;background:#111;transform:scaleX(-1)"></video><div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-act="camShot">Jepret</button><button type="button" class="btn ghost" data-act="camStop">Batal kamera</button></div></div>
     <input id="selfie" type="file" accept="image/*" capture="user" hidden>
     <img id="selfie-prev" class="selfie" alt="Pratinjau selfie" hidden>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit" id="absen-go" disabled>Simpan ${kind === "in" ? "check-in" : "check-out"}</button></div></form>`);
@@ -2479,14 +2480,22 @@ const fdist = m => m >= 1000 ? (m / 1000).toLocaleString("id-ID", {maximumFracti
 function geoInfo(g) {
   if (!g || g.err) return {ok: false, txt: g?.err || "Lokasi tidak tersedia"};
   const o = outletGeo(); if (!o) return {ok: null, txt: "Lokasi outlet belum diatur"};
-  const d = distM(g, o), ok = d <= (+o.radius || 100) + Math.min(+g.acc || 0, 100);
+  const d = distM(g, o), ok = d <= (+o.radius || 100) + Math.min(+g.acc || 0, 150);
   return {ok, d, txt: (ok ? "Di outlet · " : "Di luar outlet · ") + fdist(d) + " dari " + (S.settings.outlet || "Coffee Rouna")};
 }
+let GEO_WATCH = null, GEO_TIMER = null;
+function stopGeo() { try { if (GEO_WATCH != null) navigator.geolocation.clearWatch(GEO_WATCH); } catch (e) {} GEO_WATCH = null; clearTimeout(GEO_TIMER); }
+/* lokasi: pantau beberapa detik dan pakai titik paling akurat; bila GPS lambat (di dalam ruangan) pakai lokasi jaringan */
 function startGeo() {
-  GEO = {pending: true};
+  stopGeo(); GEO = {pending: true};
   if (!navigator.geolocation) { GEO = {err: "Perangkat tidak mendukung lokasi"}; geoStatus(); return; }
-  navigator.geolocation.getCurrentPosition(p => { GEO = {lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy), ts: Date.now()}; geoStatus(); },
-    e => { GEO = {err: e.code === 1 ? "Izin lokasi ditolak" : "Lokasi tidak didapat"}; geoStatus(); }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 20000});
+  const take = p => { const g = {lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy), ts: Date.now()}, cur = GEO && GEO.lat ? GEO : null;
+    if (!cur || (geoInfo(g).ok && !geoInfo(cur).ok) || (!!geoInfo(g).ok === !!geoInfo(cur).ok && g.acc < cur.acc)) GEO = g;
+    geoStatus(); if (geoInfo(GEO).ok && GEO.acc <= 30) stopGeo(); };
+  const fail = e => { if (GEO?.lat) return; if (e.code === 1) { GEO = {err: "Izin lokasi ditolak"}; geoStatus(); stopGeo(); return; }
+    navigator.geolocation.getCurrentPosition(take, e2 => { if (!GEO?.lat) { GEO = {err: e2.code === 1 ? "Izin lokasi ditolak" : "Lokasi tidak didapat"}; geoStatus(); } }, {enableHighAccuracy: false, timeout: 15000, maximumAge: 60000}); };
+  try { GEO_WATCH = navigator.geolocation.watchPosition(take, fail, {enableHighAccuracy: true, timeout: 20000, maximumAge: 10000}); } catch (e) { fail({code: 2}); }
+  GEO_TIMER = setTimeout(() => { stopGeo(); if (GEO?.pending) fail({code: 3}); }, 25000);
   geoStatus();
 }
 function geoStatus() {
@@ -2553,7 +2562,7 @@ async function setOutletGeo(btn) {
 
 function attDate() {
   const t = today(), y = addDays(t, -1), mt = S.attendance.find(a => a.date === t)?.rec?.[S.me], my = S.attendance.find(a => a.date === y)?.rec?.[S.me];
-  if (!mt?.in && my?.in && !my.out && Date.now() - my.in.ts < 20 * 36e5) return y;
+  if (!mt?.in && my?.in && !my.out && new Date().getHours() < 6 && Date.now() - my.in.ts < 20 * 36e5) return y;
   return t;
 }
 let LAST_FILE = null;
@@ -2561,9 +2570,16 @@ let LAST_FILE = null;
 const FLEX_ROLES = ["manager", "finance", "headbar"];
 function isFlex(sid) { return FLEX_ROLES.includes(S.staff[sid]?.role); }
 const geoAllowed = () => isFlex(S.me) || !S.settings.geoRequired || !outletGeo() || geoInfo(GEO).ok === true;
+let TRY_LOGGED = 0;
+function logAbsenTry(reason) {
+  const f = $("form[data-submit=absen]"); if (!f || Date.now() - TRY_LOGGED < 60000) return; TRY_LOGGED = Date.now();
+  const ad = f.dataset.date || today(), g = GEO && !GEO.pending ? (GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc, dist: Math.round(geoInfo(GEO).d || 0)}) : null;
+  mergeDoc("attendance/" + ad, {try: {[S.me]: {ts: Date.now(), k: f.dataset.k, reason, geo: g, ua: navigator.userAgent.slice(0, 120)}}}, {date: ad}).catch(() => {});
+}
 function updAbsenBtn() {
   const b = $("#absen-go"), w = $("#geo-block"); if (!b) return;
   const k = $("form[data-submit=absen]")?.dataset.k || "in", ok = geoAllowed();
+  if (!ok && !GEO?.pending) logAbsenTry(GEO?.err ? GEO.err : "di luar radius (" + fdist(geoInfo(GEO).d || 0) + ", ±" + (GEO?.acc || "?") + " m)");
   b.disabled = !SELFIE || !!GEO?.pending || !ok;
   b.textContent = GEO?.pending ? "Menunggu lokasi…" : !ok ? "Di luar lokasi outlet" : "Simpan " + (k === "in" ? "check-in" : "check-out");
   if (w) w.hidden = ok || !!GEO?.pending;
@@ -2573,6 +2589,20 @@ function shrink(file, size, q) {
   return new Promise((res, rej) => { const img = new Image(); const url = URL.createObjectURL(file);
     img.onload = () => { const s = Math.min(1, size / Math.max(img.width, img.height)); const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c); };
     img.onerror = rej; img.src = url; });
+}
+/* kamera di dalam aplikasi: aplikasi tidak perlu pindah ke aplikasi kamera (di HP tertentu aplikasi bisa tertutup saat itu) */
+let CAM = null;
+async function camOpen() {
+  const box = $("#cam-box"), v = $("#cam-v"); if (!box || !v) return;
+  if (!navigator.mediaDevices?.getUserMedia) { $("#selfie")?.click(); return; }
+  try { CAM = await navigator.mediaDevices.getUserMedia({video: {facingMode: "user", width: {ideal: 900}, height: {ideal: 1200}}, audio: false}); v.srcObject = CAM; box.hidden = false; await v.play().catch(() => {}); }
+  catch (e) { toast(e && e.name === "NotAllowedError" ? "Izin kamera ditolak. Izinkan kamera di browser, atau pakai aplikasi kamera." : "Kamera tidak bisa dibuka. Pakai aplikasi kamera."); $("#selfie")?.click(); }
+}
+function camStop() { try { CAM && CAM.getTracks().forEach(t => t.stop()); } catch (e) {} CAM = null; const b = $("#cam-box"); if (b) b.hidden = true; }
+async function camShot() {
+  const v = $("#cam-v"); if (!v || !v.videoWidth) return toast("Kamera belum siap.");
+  const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; const x = c.getContext("2d"); x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(v, 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, "image/jpeg", .85)); camStop(); if (blob) onSelfie(blob);
 }
 async function onSelfie(file) {
   LAST_FILE = file;
@@ -2704,7 +2734,7 @@ async function seedItems() {
 
 /* ---------- modal & confirm ---------- */
 function openModal(html) { try { if (!(history.state && history.state.rm)) history.pushState({rm: 1}, ""); } catch (e) {} $("#modal").innerHTML = `<div class="modal-bg" data-act="bg">${html}</div>`; const f = $("#modal input:not([type=hidden]):not([hidden]),#modal select"); if (f && window.innerWidth > 700) f.focus(); }
-function closeModal() { $("#modal").innerHTML = ""; S.modal = null; }
+function closeModal() { try { camStop(); stopGeo(); } catch (e) {} $("#modal").innerHTML = ""; S.modal = null; }
 window.addEventListener("popstate", () => { if ($("#modal").innerHTML) closeModal(); });
 let CONFIRM = null;
 function confirmBox(title, text, label, fn) {
@@ -4145,6 +4175,9 @@ const ACT = {
   more: () => { S.ui.more = !S.ui.more; render(); },
   setGeo: b => setOutletGeo(b),
   geoRetry: async () => { startGeo(); await waitGeo(15000); if (LAST_FILE) onSelfie(LAST_FILE); },
+  camOpen: () => camOpen(),
+  camShot: () => camShot(),
+  camStop: () => camStop(),
   geoReq: async b => { if (await guard(() => mergeDoc("settings/app", {geoRequired: !S.settings.geoRequired}, {}))) toast(S.settings.geoRequired ? "Absen di luar outlet sekarang diizinkan (ditandai kuning)." : "Absen sekarang wajib di lokasi outlet."); },
   goUtang: () => { S.view = "keuangan"; S.ui.finTab = "utang"; render(); },
   hints: () => { S.hints = !S.hints; lsSet("rouna_hints", S.hints ? "1" : null); document.body.classList.toggle("hints", S.hints); render(); toast(S.hints ? "Petunjuk ditampilkan." : "Petunjuk disembunyikan."); },
