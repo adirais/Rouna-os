@@ -2781,7 +2781,7 @@ const tot2 = (rows, f) => rows.reduce((s, r) => s + f(r), 0);
 function modalPayDetail(id) {
   const mo = S.ui.finMonth, r = payRows(mo).find(x => x.id === id); if (!r) return;
   const a = r.a;
-  openModal(`<div class="modal wide" role="dialog" aria-label="Rincian absensi"><div class="modal-h"><div><div class="eyebrow">${monthLabel(mo)} · ${ROLES[r.role]}</div><h2>${esc(r.name)}</h2></div><div class="row"><button class="btn sm" data-act="salEdit" data-id="${id}">Atur gaji</button><button class="btn sm" data-act="slipPdf" data-id="${id}">Unduh slip PDF</button><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
+  openModal(`<div class="modal wide" role="dialog" aria-label="Rincian absensi"><div class="modal-h"><div><div class="eyebrow">${monthLabel(mo)} · ${ROLES[r.role]}</div><h2>${esc(r.name)}</h2></div><div class="row"><button class="btn sm" data-act="salEdit" data-id="${id}">Atur gaji</button><button class="btn sm" data-act="slipPdf" data-id="${id}">Unduh slip PDF</button>${canEditAtt() ? `<button class="btn sm" data-act="attEdit" data-sid="${id}">Tambah absen manual</button>` : ""}<button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
     <div class="grid3"><div class="kpi"><span class="eyebrow">Hadir / shift</span><span class="v">${a.hadir}/${a.jadwal}</span><span class="small muted">jam kerja ${fjam(a.jam)}</span></div>
       <div class="kpi"><span class="eyebrow">Telat</span><span class="v">${a.telatMin} mnt</span><span class="small muted">toleransi ${a.tolBulan} mnt (${a.masuk} shift × ${tolTelat()}) · dipotong ${a.telatHitung} mnt</span></div>
       <div class="kpi"><span class="eyebrow">Alpha · sakit tanpa izin</span><span class="v">${a.alpha} · ${a.sakitTS}</span><span class="small muted">izin ${a.izin} · cuti ${a.cuti} · sakit ${a.sakit}</span></div>
@@ -2797,8 +2797,8 @@ function modalPayDetail(id) {
       <div class="li"><span class="grow">(−) Potongan lain</span><span class="num">${rp(r.pl)}</span></div>
       <div class="li"><span class="grow"><b>Gaji bersih</b></span><span class="num"><b>${rp(r.net)}</b></span></div>
       <label class="f" style="padding:8px 0 0">Catatan di slip (opsional)<input data-pp="ket" data-sid="${id}" maxlength="200" value="${esc(r.ket)}" placeholder="mis. potongan lain = ganti gelas pecah 12/9"></label></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Jadwal</th><th class="r">Masuk</th><th class="r">Pulang</th><th class="r">Jam kerja</th><th class="r">Telat</th><th>Keterangan</th></tr></thead><tbody>
-      ${a.days.map(d => `<tr><td>${fdate(d.date)}</td><td>${d.k ? `<span class="sh ${shCls(d.k)}">${d.k}</span>` : "–"}</td><td class="r num">${d.in ? ftime(d.in) : "–"}</td><td class="r num">${d.out ? ftime(d.out) : "–"}</td><td class="r num">${d.jam ? fjam(d.jam) : "–"}</td><td class="r num">${d.late ? d.late + " mnt" : "–"}</td><td class="small">${esc(d.status)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Belum ada jadwal atau absensi bulan ini.</td></tr>`}
+    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Jadwal</th><th class="r">Masuk</th><th class="r">Pulang</th><th class="r">Jam kerja</th><th class="r">Telat</th><th>Keterangan</th>${canEditAtt() ? "<th></th>" : ""}</tr></thead><tbody>
+      ${a.days.map(d => `<tr><td>${fdate(d.date)}</td><td>${d.k ? `<span class="sh ${shCls(d.k)}">${d.k}</span>` : "–"}</td><td class="r num">${d.in ? ftime(d.in) : "–"}</td><td class="r num">${d.out ? ftime(d.out) : "–"}</td><td class="r num">${d.jam ? fjam(d.jam) : "–"}</td><td class="r num">${d.late ? d.late + " mnt" : "–"}</td><td class="small">${esc(d.status)}${attEditNote(id, d.date)}</td>${canEditAtt() ? `<td><button class="btn sm ghost" data-act="attEdit" data-sid="${id}" data-date="${d.date}">Ubah</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="7" class="muted">Belum ada jadwal atau absensi bulan ini.</td></tr>`}
     </tbody></table></div></div>`);
 }
 async function setPayPerson(sid, k, v) {
@@ -4186,7 +4186,39 @@ const SUBMIT = {
     S.authUser = u; lsSet("runa_view", null); S.view = "home"; await startData(data.session);
   }
 };
-Object.assign(ACT, ACT2, ACT3, ACT4); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4);
+/* ===== Koreksi absen oleh Owner & Finance (2 Nov 2026) ===== */
+function canEditAtt() { return ["owner", "finance"].includes(realRole()); }
+const attRec = (sid, date) => S.attendance.find(a => a.date === date)?.rec?.[sid] || null;
+const hhmm = ts => { if (!ts) return ""; const d = new Date(ts); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+function attEditNote(sid, date) { const e = attRec(sid, date)?.edit; return e ? `<span class="sub" title="${esc(e.reason || "")}">Dikoreksi ${esc(S.staff[e.by]?.name || "-")} · ${fdt(e.at)}${e.reason ? " · " + esc(e.reason) : ""}</span>` : ""; }
+function modalAttEdit(sid, date) {
+  if (!canEditAtt()) return toast("Hanya Owner dan Finance yang bisa mengoreksi absen.");
+  const r = date ? attRec(sid, date) : null, k = date ? planOf(date)[sid] : "";
+  openModal(`<form data-submit="attEdit" data-sid="${sid}" class="modal" role="dialog" aria-label="Koreksi absen"><div class="modal-h"><h2>Koreksi absen · ${esc(S.staff[sid]?.name || "-")}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f" style="grid-column:1/-1">Tanggal<input type="date" name="date" value="${esc(date || today())}" max="${today()}" ${date ? "readonly" : ""} required></label>
+    <label class="f">Jam masuk<input type="time" name="tin" value="${hhmm(r?.in?.ts)}"></label><label class="f">Jam pulang<input type="time" name="tout" value="${hhmm(r?.out?.ts)}"></label>
+    <label class="f" style="grid-column:1/-1">Alasan koreksi<input name="reason" maxlength="160" required placeholder="mis. lupa absen pulang, HP mati, salah tekan"></label></div>
+    <p class="small muted" style="margin:0">${k ? "Jadwal hari itu: " + esc(shiftLabel(k)) + ". " : ""}Jam pulang lebih kecil dari jam masuk dihitung hari berikutnya (shift malam). Kosongkan keduanya untuk menghapus absen hari itu. Foto selfie dan lokasi asli tetap disimpan; koreksi tercatat atas namamu.</p>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan koreksi</button></div></form>`);
+}
+async function submitAttEdit(f) {
+  if (!canEditAtt()) return toast("Hanya Owner dan Finance yang bisa mengoreksi absen.");
+  const sid = f.dataset.sid, date = f.date.value, ti = f.tin.value, to = f.tout.value, reason = f.reason.value.trim();
+  if (!date || date > today()) return toast("Tanggal tidak valid.");
+  if (!ti && to) return toast("Isi jam masuk dulu.");
+  const prev = attRec(sid, date), edit = {by: S.me, at: Date.now(), reason, prevIn: prev?.in?.ts || null, prevOut: prev?.out?.ts || null};
+  let rec = null;
+  if (ti) {
+    const tin = new Date(date + "T" + ti + ":00").getTime(); let tout = to ? new Date(date + "T" + to + ":00").getTime() : null;
+    if (tout != null && tout <= tin) tout += 864e5;
+    rec = {in: {...(prev?.in || {}), ts: tin, ...(prev?.in ? {} : {manual: true})}, out: tout != null ? {...(prev?.out || {}), ts: tout, ...(prev?.out ? {} : {manual: true})} : null, edit};
+  } else if (!prev) return toast("Belum ada absen di tanggal itu.");
+  else rec = {in: null, out: null, edit};
+  if (await guard(() => mergeDoc("attendance/" + date, {rec: {[sid]: rec}}, {date}))) { closeModal(); toast(ti ? "Absen dikoreksi." : "Absen hari itu dihapus."); }
+}
+const ACT5 = {attEdit: b => modalAttEdit(b.dataset.sid, b.dataset.date || "")};
+const SUBMIT5 = {attEdit: submitAttEdit};
+Object.assign(ACT, ACT2, ACT3, ACT4, ACT5); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5);
 document.addEventListener("submit", e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (fn) fn(f); });
 
 document.body.classList.toggle("hints", S.hints);
