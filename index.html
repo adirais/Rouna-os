@@ -1817,22 +1817,35 @@ function viewExpenses(mo) {
     <select id="ex-f" data-ui="exCat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${EXP_GROUPS.map(([g, cs]) => `<optgroup label="${esc(g)}"><option value="g:${esc(g)}" ${u.exCat === "g:" + g ? "selected" : ""}>Semua ${esc(g)}</option>${cs.filter(c => cats.includes(c)).map(c => `<option value="${esc(c)}" ${u.exCat === c ? "selected" : ""}>${esc(catLabel(c))}</option>`).join("")}</optgroup>`).join("")}</select></div>
     <div class="panel-h"><span class="small muted">${ex.length} transaksi</span><span class="num"><b>${rp(tot)}</b></span></div>
     ${ex.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Detail</th><th>Kategori</th><th>Metode</th><th>Dibayar kepada</th><th class="r">Biaya</th><th></th></tr></thead><tbody>
-    ${ex.slice(0, 400).map(e => `<tr><td class="small" style="white-space:nowrap">${fdate(e.date)}${e.nodate ? ' <span class="chip warn">?</span>' : ""}</td><td>${esc(e.note || "-")}</td><td class="small">${esc(catLabel(e.cat))}</td><td class="small muted">${esc(e.pay || "")}</td><td class="small">${esc(e.to || "")}</td><td class="r num">${rp(e.amt)}</td><td class="r">${canEdit ? `<button class="btn sm ghost" data-act="expVoid" data-id="${e.id}" data-m="${mo}" aria-label="Batalkan">✕</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">-</div>`}</section>`;
+    ${ex.slice(0, 400).map(e => `<tr><td class="small" style="white-space:nowrap">${fdate(e.date)}${e.nodate ? ' <span class="chip warn">?</span>' : ""}</td><td>${esc(e.note || "-")}${e.edit ? `<span class="sub small muted">Diubah ${esc(S.staff[e.edit.by]?.name || "-")} · ${fdt(e.edit.at)}</span>` : ""}</td><td class="small">${esc(catLabel(e.cat))}</td><td class="small muted">${esc(e.pay || "")}</td><td class="small">${esc(e.to || "")}</td><td class="r num">${rp(e.amt)}</td><td class="r" style="white-space:nowrap">${canEdit ? `<button class="btn sm ghost" data-act="expEdit" data-id="${e.id}" data-m="${mo}" aria-label="Ubah">Ubah</button><button class="btn sm ghost" data-act="expVoid" data-id="${e.id}" data-m="${mo}" aria-label="Batalkan">✕</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">-</div>`}</section>`;
 }
-function modalExpense() {
+function modalExpense(m, id) {
+  const e = m && id ? S.expenses.find(x => x.month === m)?.rec?.[id] : null;
   const tos = [...new Set(S.expenses.flatMap(m => Object.values(m.rec || {}).map(r => r.to)).filter(Boolean))].sort().slice(0, 300);
-  openModal(`<form data-submit="expense" class="modal" role="dialog" aria-label="Catat pengeluaran"><div class="modal-h"><h2>Catat pengeluaran</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-    <label class="f">Detail pengeluaran<input id="ex-note" name="note" maxlength="100" required placeholder="mis. UHT dan Fresh Milk, Token listrik, Gaji 1–15"></label>
-    <div class="fgrid two"><label class="f">Tanggal<input id="ex-date" name="date" type="date" value="${today()}" required></label>
-      <label class="f">Biaya (Rp)<input id="ex-amt" name="amt" type="number" min="1" step="any" inputmode="numeric" required></label>
-      <label class="f">Kategori<select id="ex-cat" name="cat">${EXP_GROUPS.map(([g, cs]) => `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${esc(c)}">${esc(catLabel(c))}</option>`).join("")}</optgroup>`).join("")}</select></label>
-      <label class="f">Metode<select id="ex-pay" name="pay">${PAY_METHODS.map(c => `<option>${c}</option>`).join("")}</select></label></div>
-    <label class="f">Dibayar kepada<input id="ex-to" name="to" list="ex-tos" maxlength="60" placeholder="nama vendor atau orang"></label><datalist id="ex-tos">${tos.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+  openModal(`<form data-submit="expense" class="modal" role="dialog" aria-label="${e ? "Ubah" : "Catat"} pengeluaran" ${e ? `data-m="${m}" data-id="${id}"` : ""}><div class="modal-h"><h2>${e ? "Ubah" : "Catat"} pengeluaran</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <label class="f">Detail pengeluaran<input id="ex-note" name="note" maxlength="100" required placeholder="mis. UHT dan Fresh Milk, Token listrik, Gaji 1–15" value="${esc(e?.note || "")}"></label>
+    <div class="fgrid two"><label class="f">Tanggal<input id="ex-date" name="date" type="date" value="${esc(e?.date || today())}" required></label>
+      <label class="f">Biaya (Rp)<input id="ex-amt" name="amt" type="number" min="1" step="any" inputmode="numeric" required value="${e ? e.amt : ""}" ${e?.payable ? "readonly" : ""}></label>
+      <label class="f">Kategori<select id="ex-cat" name="cat">${EXP_GROUPS.map(([g, cs]) => `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${esc(c)}" ${e?.cat === c ? "selected" : ""}>${esc(catLabel(c))}</option>`).join("")}</optgroup>`).join("")}${e && !EXP_CATS.includes(e.cat) ? `<option value="${esc(e.cat)}" selected>${esc(e.cat)}</option>` : ""}</select></label>
+      <label class="f">Metode<select id="ex-pay" name="pay">${[...new Set([...PAY_METHODS, ...(e?.pay ? [e.pay] : [])])].map(c => `<option ${e?.pay === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div>
+    <label class="f">Dibayar kepada<input id="ex-to" name="to" list="ex-tos" maxlength="60" placeholder="nama vendor atau orang" value="${esc(e?.to || "")}"></label>${e?.payable ? `<p class="small muted" style="margin:0">Biaya ini berasal dari pembayaran utang supplier, jadi nominalnya diubah lewat Keuangan → Utang.</p>` : ""}${e ? `<p class="small muted" style="margin:0">Perubahan tercatat atas namamu; isi sebelumnya tetap disimpan.</p>` : ""}<datalist id="ex-tos">${tos.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitExpense(form) {
   const amt = num(form.amt.value), date = form.date.value || today(), mo = date.slice(0, 7);
   if (!(amt > 0)) return toast("Isi nominal biaya.");
+  if (form.dataset.id) {
+    const om = form.dataset.m, id = form.dataset.id, old = S.expenses.find(x => x.month === om)?.rec?.[id]; if (!old) return toast("Catatan tidak ditemukan.");
+    const prev = {date: old.date, cat: old.cat, amt: old.amt, pay: old.pay, note: old.note, to: old.to};
+    const next = {date, cat: form.cat.value, amt: old.payable ? old.amt : amt, pay: form.pay.value, note: form.note.value.trim(), to: form.to.value.trim(), nodate: false};
+    const edit = {by: S.me, at: Date.now(), prev, hist: [...(old.edit?.hist || []), ...(old.edit ? [{by: old.edit.by, at: old.edit.at, prev: old.edit.prev}] : [])].slice(-10)};
+    const ok = await guard(async () => {
+      if (mo === om) await mergeDoc("expenses/" + om, {rec: {[id]: {...next, edit}}}, {month: om});
+      else { await mergeDoc("expenses/" + mo, {rec: {[id]: {...old, ...next, edit}}}, {month: mo}); await mergeDoc("expenses/" + om, {rec: {[id]: {void: true, voidBy: S.me, voidAt: Date.now(), movedTo: mo}}}, {month: om}); }
+    });
+    if (ok) { closeModal(); S.ui.finMonth = mo; toast("Pengeluaran diperbarui."); }
+    return;
+  }
   const ok = await guard(() => mergeDoc("expenses/" + mo, {rec: {[uid()]: {date, cat: form.cat.value, amt, pay: form.pay.value, note: form.note.value.trim(), to: form.to.value.trim(), by: S.me, ts: Date.now()}}}, {month: mo}));
   if (ok) { closeModal(); S.ui.finMonth = mo; toast("Pengeluaran tercatat."); }
 }
@@ -4087,6 +4100,7 @@ const ACT = {
   waste: () => modalWaste(),
   docAck: async b => { if (await guard(async () => { const {error} = await SB.rpc("ack_doc", {p_id: b.dataset.id}); if (error) throw dbError(error); S.db.bump("docs"); })) toast("Terima kasih, tercatat sudah dibaca."); },
   expense: () => modalExpense(),
+  expEdit: b => modalExpense(b.dataset.m, b.dataset.id),
   cashNew: () => modalCash(),
   cashEdit: b => modalCash(b.dataset.id),
   payEdit: () => modalPay(),
