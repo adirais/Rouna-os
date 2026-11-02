@@ -447,7 +447,7 @@ async function logMoves(entries) {
 }
 async function setStock(id, patch) {
   const cur = stockOf(id);
-  const next = {gudang: +(cur.gudang || 0), area: +(cur.area || 0), ...patch, updatedAt: Date.now()};
+  const next = {gudang: +(cur.gudang || 0), area: +(cur.area || 0), ...patch, updatedAt: Date.now(), by: S.me};
   next.gudang = Math.round(next.gudang * 1000) / 1000; next.area = Math.round(next.area * 1000) / 1000;
   S.stock[id] = next;
   await S.db.doc("stock/" + id).set(next);
@@ -817,9 +817,22 @@ function myAttChip() {
   return `<span class="chip">${ftime(a.in.ts)}–${ftime(a.out.ts)}</span>`;
 }
 const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
+const whoName = id => id === "import" ? "Impor Excel" : S.staff[id]?.name || "-";
 function moveRow(m) {
   const it = S.items[m.itemId]; const l = MOVE_LBL[m.t] || [m.t, ""];
-  return `<div class="li"><div class="grow"><b>${esc(it?.name || "Bahan dihapus")}</b><span class="sub small muted">${fdt(m.ts)} · ${esc(S.staff[m.by]?.name || "-")}${m.note ? " · " + esc(m.note) : ""}</span></div><span class="chip ${l[1]}">${l[0]}</span><span class="num">${m.qty > 0 && !["spoil", "waste"].includes(m.t) ? "+" : ""}${fq(m.qty)} ${esc(it?.unit || "")}</span></div>`;
+  return `<div class="li"><div class="grow"><b>${esc(it?.name || "Bahan dihapus")}</b><span class="sub small muted">${fdt(m.ts)} · oleh <b>${esc(whoName(m.by))}</b>${m.note ? " · " + esc(m.note) : ""}</span></div><span class="chip ${l[1]}">${l[0]}</span><span class="num">${m.qty > 0 && !["spoil", "waste"].includes(m.t) ? "+" : ""}${fq(m.qty)} ${esc(it?.unit || "")}</span></div>`;
+}
+
+/* Riwayat mutasi stok 45 hari: siapa, kapan, apa — bisa disaring per orang & jenis (2 Nov 2026) */
+function mutasiPanel() {
+  const u = S.ui, all = S.moves.flatMap(m => Object.values(m.list || {})).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const people = [...new Set(all.map(e => e.by).filter(Boolean))].sort((a, b) => whoName(a).localeCompare(whoName(b)));
+  const types = [...new Set(all.map(e => e.t))];
+  const list = all.filter(e => (!u.mvBy || e.by === u.mvBy) && (!u.mvT || e.t === u.mvT));
+  return `<section class="panel"><div class="panel-h"><div><h2>Riwayat mutasi</h2><span class="small muted">Setiap ambil, masuk, retur, waste, dan opname tercatat otomatis atas nama akun yang menyimpan.</span></div>
+    <div class="row"><select data-ui="mvBy" style="width:auto" aria-label="Saring per orang"><option value="">Semua orang</option>${people.map(p => `<option value="${esc(p)}" ${u.mvBy === p ? "selected" : ""}>${esc(whoName(p))}</option>`).join("")}</select>
+    <select data-ui="mvT" style="width:auto" aria-label="Saring per jenis"><option value="">Semua jenis</option>${types.map(t => `<option value="${esc(t)}" ${u.mvT === t ? "selected" : ""}>${esc((MOVE_LBL[t] || [t])[0])}</option>`).join("")}</select></div></div>
+    ${list.length ? `<div class="list">${list.slice(0, 150).map(moveRow).join("")}</div>${list.length > 150 ? `<div class="small muted">Menampilkan 150 dari ${list.length} catatan. Saring per orang atau jenis untuk melihat sisanya.</div>` : ""}` : `<div class="small muted">Belum ada mutasi tercatat.</div>`}</section>`;
 }
 
 /* ---------- STOCK ---------- */
@@ -849,7 +862,7 @@ function viewStock() {
       <td style="min-width:110px">${min ? `<div class="bar ${st[0] !== "aman" ? "low" : ""}"><i style="width:${Math.max(2, w)}%"></i></div><span class="small muted">min ${fq(min)}</span>` : `<span class="small muted">Minimum belum diatur</span>`}</td>
       <td>${min ? `<span class="chip ${st[1]}">${st[2]}</span>` : `<span class="chip">Atur min</span>`}</td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Tidak ada bahan yang cocok.</td></tr>`}
     </tbody></table></div></section>
-  <section class="panel"><h2>Riwayat mutasi</h2>${recent.length ? `<div class="list">${recent.map(moveRow).join("")}</div>` : `<div class="small muted">Belum ada mutasi tercatat.</div>`}</section>`;
+  ${mutasiPanel()}`;
 }
 function itemOptions(sel, area) {
   const groups = {};
