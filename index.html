@@ -187,6 +187,14 @@ svg text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
 .login .link{background:none;border:0;padding:0;color:var(--accent);font-weight:600;cursor:pointer;justify-self:start}
 @media (min-width:900px){.login::before{left:auto;right:-14%;bottom:-38%;width:min(92vw,1400px)}}
 .li .sub{display:block}
+.ub{border-bottom:1px solid var(--line)}
+.ub summary{cursor:pointer;list-style:none;padding:10px 0;display:grid;gap:6px}
+.ub summary::-webkit-details-marker{display:none}
+.ub-n{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.ub-v{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-family:var(--f-mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+.ub-v small{display:block;font-family:inherit;font-size:.68rem;color:var(--muted)}
+.ub-v i{font-style:normal;color:var(--muted);display:block;font-size:.72rem}
+.ub-d{padding:0 0 12px;display:grid;gap:8px}
 .top .who{margin-left:auto}
 .top .ctx{display:none}
 @media (min-width:900px){.top .ctx{display:block}}
@@ -1079,7 +1087,7 @@ async function submitClosing(form) {
 /* ---------- SALES (Olsera) ---------- */
 function viewSales() {
   const day = S.ui.salesDay ? S.sales.find(s => s.date === S.ui.salesDay) : null;
-  const recDate = S.ui.recDate || S.closings.find(c => S.sales.some(s => s.date === c.date))?.date || "";
+  const recDate = (S.sales.some(s => s.date === S.ui.recDate) && S.ui.recDate) || S.sales.find(s => S.closings.some(c => c.date === s.date))?.date || S.sales[0]?.date || "";
   return `<div class="pagehead"><div><div class="eyebrow">Unggah laporan harian dari Olsera</div><h1>Penjualan</h1></div>
     <div class="row"><label class="btn pri" for="olsera-file" style="cursor:pointer">Unggah 2 laporan Olsera</label><input id="olsera-file" type="file" accept=".csv,.xlsx,.xls,.pdf" multiple hidden></div></div>
   <div class="alert acc"><div class="grow small"><b>Tiap hari unggah 2 PDF Olsera untuk tanggal kemarin</b> — pilih keduanya sekaligus: <b>1.</b> <i>Laporan Keseluruhan Penjualan</i> (pendapatan, CASH/QRIS, diskon, batal, HPP Olsera) dan <b>2.</b> <i>Penjualan berdasarkan SKU</i> (qty & harga modal semua produk → HPP ROUNA, analitik, cocok stok).</div></div>
@@ -1089,9 +1097,9 @@ function viewSales() {
   ${!S.sales.length ? `<div class="empty"><b>Belum ada data penjualan per produk</b><span>Unggah PDF <i>Penjualan berdasarkan SKU</i> dari Olsera (atau export per produk CSV/Excel). Qty, total, dan harga modal tiap produk dikenali otomatis.</span></div>` : ""}
   <div class="grid2">
   <section class="panel"><h2>Data tersimpan</h2>${S.sales.length ? `<div class="list">${S.sales.slice(0, 30).map(s => `<div class="li"><div class="grow"><b>${fdate(s.date)}</b><span class="sub small muted">${(s.rows || []).length} produk · ${fq(s.qty)} terjual</span></div><span class="num">${rpk(s.total)}</span><button class="btn sm" data-act="ui" data-k="salesDay" data-v="${S.ui.salesDay === s.date ? "" : s.date}">${S.ui.salesDay === s.date ? "Tutup" : "Detail"}</button></div>`).join("")}</div>` : `<div class="small muted">-</div>`}</section>
-  <section class="panel"><div class="panel-h"><h2>Cocokkan stok vs penjualan</h2><select id="rec-date" data-ui="recDate" style="width:auto" aria-label="Tanggal">${S.sales.map(s => `<option value="${s.date}" ${recDate === s.date ? "selected" : ""}>${fdate(s.date)}</option>`).join("")}</select></div>
-    ${recDate ? reconcileView(recDate) : `<div class="small muted">Butuh data penjualan dan closing di tanggal yang sama.</div>`}</section>
   </div>
+  <section class="panel"><div class="panel-h"><h2>Pemakaian bahan: resep vs aktual</h2><select id="rec-date" data-ui="recDate" style="width:auto" aria-label="Tanggal">${S.sales.map(s => `<option value="${s.date}" ${recDate === s.date ? "selected" : ""}>${fdate(s.date)}</option>`).join("")}</select></div>
+    ${recDate ? usageView(recDate) : `<div class="small muted">Unggah laporan Penjualan berdasarkan SKU untuk melihat pemakaian bahan.</div>`}</section>
   ${day ? `<section class="panel"><div class="panel-h"><h2>Detail ${fdate(day.date)}</h2><div class="row"><span class="small muted">${esc(day.file || "")}</span>${isMgr() ? `<button class="btn sm danger" data-act="delSales" data-d="${day.date}">Hapus hari ini</button>` : ""}</div></div>
     <div class="list">${(() => { const dl = S.daily.find(x => x.date === day.date); return hppRounaRows([day], dl?.pl?.revenue || day.total, dl?.pl?.hpp); })()}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th class="r">Qty</th><th class="r">Penjualan</th>${skuHas(day) ? `<th class="r">HPP Olsera</th><th class="r">HPP ROUNA</th><th class="r">Selisih</th>` : ""}<th>Resep</th></tr></thead><tbody>
@@ -1107,16 +1115,59 @@ function actualUsage(date) {
   Object.values(c?.shifts || {}).forEach(sh => Object.entries(sh.lines || {}).forEach(([id, l]) => out[id] = (out[id] || 0) + (l.usage || 0)));
   return {out, has: !!c};
 }
-function reconcileView(date) {
-  const {out: th, noRec} = theoUsage(date), {out: ac, has} = actualUsage(date);
-  if (!has) return `<div class="small muted">Belum ada closing pada ${fdate(date)}. Pemakaian riil dihitung dari closing.</div>`;
-  const ids = [...new Set([...Object.keys(th), ...Object.keys(ac)])].filter(id => S.items[id] && ((th[id] || 0) || (ac[id] || 0)));
-  const rows = ids.map(id => { const t = th[id] || 0, a = ac[id] || 0, d = a - t; return {id, t, a, d, p: t ? d / t : (a ? 1 : 0), rp: d * itemCost(id)}; }).sort((x, y) => Math.abs(y.rp) - Math.abs(x.rp));
-  const loss = rows.filter(r => r.d > 0).reduce((s, r) => s + r.rp, 0);
-  return `<div class="alert ${loss > 0 ? "warn" : "ok"}"><div class="grow">Selisih lebih pakai <b>${rp(loss)}</b>${noRec ? ` · ${noRec} produk belum punya resep, jadi pemakaian teoritisnya belum dihitung` : ""}</div></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Teori (resep×jual)</th><th class="r">Riil (closing)</th><th class="r">Selisih</th></tr></thead><tbody>
-  ${rows.slice(0, 25).map(r => { const it = S.items[r.id], bad = Math.abs(r.p) > .1 && Math.abs(r.d) > 0; return `<tr><td>${esc(it.name)}</td><td class="r num">${fq(r.t)}</td><td class="r num">${fq(r.a)}</td><td class="r"><span class="chip ${bad ? (r.d > 0 ? "crit" : "warn") : "ok"}">${r.d > 0 ? "+" : ""}${fq(r.d)} ${esc(it.unit)} · ${pct(r.p)}</span></td></tr>`; }).join("") || `<tr><td colspan="4" class="muted">Belum ada bahan yang bisa dicocokkan. Lengkapi resep produk di Pengaturan.</td></tr>`}</tbody></table></div>
-  <div class="small muted">Selisih di atas 10% ditandai. Plus = pemakaian riil lebih banyak dari resep (porsi berlebih, bocor, atau belum tercatat spoil).</div>`;
+/* Pemakaian bahan per hari: teori (qty SKU Olsera x resep) dibanding aktual (closing). rows boleh dikirim langsung tepat setelah unggah. */
+function usageReport(date, rows) {
+  const src = rows || S.sales.find(x => x.date === date)?.rows || [], th = {}, noRec = {};
+  src.forEach(r => {
+    const rc = recipeOf(r.name), q = +r.qty || 0;
+    if (!rc) { if (q) noRec[r.name] = (noRec[r.name] || 0) + q; return; }
+    (rc.lines || []).forEach(l => {
+      const g = (th[l.itemId] ||= {t: 0, by: {}}), use = (+l.qty || 0) * q; g.t += use;
+      const b = (g.by[r.name] ||= {name: r.name, qty: 0, per: +l.qty || 0, use: 0}); b.qty += q; b.use += use;
+    });
+  });
+  const c = S.closings.find(x => x.date === date), ac = {};
+  const closed = Object.keys(AREAS).filter(a => c?.shifts?.[a]);
+  closed.forEach(a => Object.entries(c.shifts[a].lines || {}).forEach(([id, l]) => ac[id] = (ac[id] || 0) + (+l.usage || 0)));
+  const sum = {t: 0, a: 0, over: 0, nOver: 0, nOpen: 0};
+  const out = [...new Set([...Object.keys(th), ...Object.keys(ac)])].filter(id => S.items[id]).map(id => {
+    const it = S.items[id], cost = itemCost(id), t = th[id]?.t || 0, a = ac[id] || 0, done = id in ac, d = a - t, p = t ? d / t : 0;
+    let st = "ok";
+    if (!done) { st = "open"; sum.nOpen++; }
+    else if (a < -.001) st = "neg";
+    else if (!t && a > .001) st = "norec";
+    else if (Math.abs(p) > .1) st = d > 0 ? "over" : "under";
+    if (done) { sum.t += t * cost; sum.a += a * cost; if (st === "over") { sum.over += d * cost; sum.nOver++; } }
+    return {id, name: it.name, unit: it.unit, t, a, d, p, cost, st, done, by: Object.values(th[id]?.by || {}).sort((x, y) => y.use - x.use)};
+  }).filter(r => r.t || r.a).sort((x, y) => (y.done - x.done) || (Math.abs(y.d * y.cost) - Math.abs(x.d * x.cost)));
+  return {rows: out, sum, closed, missing: Object.keys(AREAS).filter(a => !closed.includes(a)), noRec: Object.entries(noRec).map(([name, qty]) => ({name, qty})).sort((x, y) => y.qty - x.qty), hasSales: src.length > 0};
+}
+function usageView(date, rows) {
+  const R = usageReport(date, rows), S2 = R.sum, gap = S2.a - S2.t;
+  const CH = {ok: ["ok", "Sesuai"], over: ["crit", "Lebih pakai"], under: ["warn", "Kurang pakai"], neg: ["warn", "Cek stok"], norec: ["warn", "Di luar resep"], open: ["", "Belum closing"]};
+  const warn = [
+    !R.closed.length ? `<b>Belum ada closing ${fdate(date)}.</b> Angka aktual muncul setelah closing bar dan kitchen dikirim.` : R.missing.length ? `<b>Closing ${R.missing.map(a => AREAS[a]).join(" dan ")} belum masuk.</b> Bahan di area itu belum dihitung dalam selisih.` : "",
+    R.noRec.length ? `<b>${R.noRec.length} produk belum punya resep</b>, jadi teori belum lengkap dan selisih bisa terlihat lebih besar.` : ""
+  ].filter(Boolean);
+  const row = r => { const ch = CH[r.st]; return `<details class="ub"><summary>
+      <span class="ub-n"><b>${esc(r.name)}</b><span class="chip ${ch[0]}">${ch[1]}</span></span>
+      <span class="ub-v"><span><small>Teori</small>${fq(r.t)}</span><span><small>Aktual</small>${r.done ? fq(r.a) : "-"}</span><span><small>Selisih</small>${r.done ? (r.d > 0 ? "+" : "") + fq(r.d) + (r.t ? ` <i>${pct(r.p)}</i>` : "") : "-"}</span><span><small>Nilai</small>${r.done ? (r.d > 0 ? "+" : "") + rpk(r.d * r.cost) : "-"}</span></span>
+    </summary><div class="ub-d">
+      <div class="small muted">Satuan: ${esc(r.unit || "-")}${r.done ? "" : " · bahan ini belum ada di closing"}</div>
+      ${r.by.length ? `<div class="tbl-wrap"><table><thead><tr><th>Produk terjual</th><th class="r">Qty</th><th class="r">Takaran</th><th class="r">Pemakaian</th></tr></thead><tbody>${r.by.map(b => `<tr><td>${esc(b.name)}</td><td class="r num">${fq(b.qty)}</td><td class="r num">${fq(b.per)}</td><td class="r num">${fq(b.use)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">Tidak ada produk terjual yang memakai bahan ini menurut resep.</div>`}
+    </div></details>`; };
+  return `${warn.map(w => `<div class="alert warn"><div class="grow small">${w}</div></div>`).join("")}
+  ${R.closed.length ? `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+    <div class="kpi"><span class="eyebrow">Teori (resep)</span><span class="v">${rpk(S2.t)}</span></div>
+    <div class="kpi"><span class="eyebrow">Aktual (closing)</span><span class="v">${rpk(S2.a)}</span></div>
+    <div class="kpi"><span class="eyebrow">Selisih bersih</span><span class="v">${gap > 0 ? "+" : ""}${rpk(gap)}</span><span class="small muted">${S2.t ? pct(gap / S2.t) + " dari teori" : "-"}</span></div>
+    <div class="kpi"><span class="eyebrow">Lebih pakai &gt;10%</span><span class="v">${rpk(S2.over)}</span><span class="small muted">${S2.nOver} bahan</span></div></div>` : ""}
+  ${R.rows.length ? `<div>${R.rows.map(row).join("")}</div>` : `<div class="small muted">Belum ada bahan yang bisa dihitung. Lengkapi resep produk.</div>`}
+  ${R.noRec.length ? `<details class="ub"><summary><b>Produk tanpa resep (${R.noRec.length})</b></summary><div class="ub-d list">${R.noRec.map(n => `<div class="li"><span class="grow">${esc(n.name)}<span class="sub small muted">${fq(n.qty)} terjual</span></span>${canRecipe() ? `<button type="button" class="btn sm" data-act="recipe" data-p="${esc(n.name)}">+ resep</button>` : ""}</div>`).join("")}</div></details>` : ""}
+  <div class="small muted">Ketuk bahan untuk melihat produk penyumbangnya. Aktual = stok sistem − sisa fisik − spoil. Lebih pakai bisa berarti porsi berlebih, bocor, atau spoil belum dicatat. Cek stok berarti ada barang masuk yang belum tercatat. Di luar resep berarti bahan terpakai tapi tidak ada di resep produk yang terjual hari itu.</div>`;
+}
+function modalUsage(date, rows) {
+  openModal(`<div class="modal wide" role="dialog" aria-label="Pemakaian bahan"><div class="modal-h"><h2>Pemakaian bahan · ${fdate(date)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>${usageView(date, rows)}</div>`);
 }
 
 /* OLSERA_PARSER_START */
@@ -3216,7 +3267,7 @@ async function submitSku() {
   const R = SKU; if (!R) return;
   const rows = R.rows.map(r => ({name: r.name, cat: r.cat, qty: r.qty, rev: r.rev, modal: r.modal, ...(r.variant ? {variant: r.variant} : {})}));
   const d = {date: R.start, rows, total: rows.reduce((s, r) => s + r.rev, 0), qty: rows.reduce((s, r) => s + r.qty, 0), modal: rows.reduce((s, r) => s + r.modal, 0), src: "olsera-sku", file: R.file, uploadedAt: Date.now(), by: S.me};
-  if (await guard(() => S.db.doc("sales/" + d.date).set(d))) { closeModal(); SKU = null; S.ui.salesDay = d.date; S.ui.dailyDay = d.date; toast("Penjualan per produk " + fdate(d.date) + " tersimpan."); }
+  if (await guard(() => S.db.doc("sales/" + d.date).set(d))) { closeModal(); SKU = null; S.ui.salesDay = d.date; S.ui.dailyDay = d.date; S.ui.recDate = d.date; toast("Penjualan per produk " + fdate(d.date) + " tersimpan."); modalUsage(d.date, rows); }
 }
 const skuHas = day => (day.rows || []).some(r => r.modal != null);
 function skuCols(day, r) {
@@ -3351,8 +3402,9 @@ async function submitPair() {
       await S.db.doc("sales/" + R.start).set({date: R.start, rows, total: rows.reduce((s, r) => s + r.rev, 0), qty: rows.reduce((s, r) => s + r.qty, 0), modal: rows.reduce((s, r) => s + r.modal, 0), src: "olsera-sku", file: R.file, uploadedAt: Date.now(), by: S.me}); }
   });
   if (!ok) return;
-  closeModal(); S.ui.dailyDay = P.date; S.ui.salesDay = P.sku ? P.date : S.ui.salesDay; PAIR = null;
+  closeModal(); S.ui.dailyDay = P.date; S.ui.salesDay = P.sku ? P.date : S.ui.salesDay; if (P.sku) S.ui.recDate = P.date; PAIR = null;
   toast(st.daily && st.sku ? `Laporan ${fdate(P.date)} lengkap.` : `Tersimpan. Masih kurang: ${st.daily ? "Penjualan berdasarkan SKU" : "Keseluruhan Penjualan"}.`);
+  if (P.sku) modalUsage(P.date, P.sku.rows);
 }
 function olsCompleteness() {
   const days = []; for (let i = 1; i <= 7; i++) days.push(addDays(today(), -i));
