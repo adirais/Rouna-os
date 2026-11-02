@@ -2458,7 +2458,10 @@ function attDate() {
   return t;
 }
 let LAST_FILE = null;
-const geoAllowed = () => !S.settings.geoRequired || !outletGeo() || geoInfo(GEO).ok === true;
+/* Manager, Finance, Headbar: jam kerja fleksibel (tanpa hitungan telat/pulang cepat) dan boleh absen di luar outlet (2 Nov 2026) */
+const FLEX_ROLES = ["manager", "finance", "headbar"];
+function isFlex(sid) { return FLEX_ROLES.includes(S.staff[sid]?.role); }
+const geoAllowed = () => isFlex(S.me) || !S.settings.geoRequired || !outletGeo() || geoInfo(GEO).ok === true;
 function updAbsenBtn() {
   const b = $("#absen-go"), w = $("#geo-block"); if (!b) return;
   const k = $("form[data-submit=absen]")?.dataset.k || "in", ok = geoAllowed();
@@ -2700,13 +2703,14 @@ function attStats(mo, sid) {
       if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++;
       if (rec?.in) { g.tanpaJadwal++; row.status += " (tetap masuk)"; }
     } else if (!k || !def) {
-      if (rec?.in) { g.tanpaJadwal++; row.status = "Masuk tanpa jadwal"; } else { if (!rec) continue; }
+      if (rec?.in) { g.tanpaJadwal++; row.status = isFlex(sid) ? "Hadir (jam fleksibel)" : "Masuk tanpa jadwal"; } else { if (!rec) continue; }
     } else if (!rec?.in && lr) {
       g.menunggu = (g.menunggu || 0) + 1; row.status = `${lr.type === "sakit" ? "Sakit" : lr.type === "cuti" ? "Cuti" : "Izin"} menunggu persetujuan (tidak dihitung alpha)`;
     } else if (!rec?.in) {
       if (ds === today()) { row.status = "Belum absen"; } else { g.jadwal++; g.alpha++; row.status = "Alpha"; }
     } else {
       g.jadwal++; g.masuk++;
+      if (isFlex(sid)) { g.flex = true; row.status = "Hadir (jam fleksibel)" + (!rec.out && ds < today() ? " · lupa check-out" : ""); g.days.push(row); continue; }
       const st = new Date(ds + "T" + def.s + ":00").getTime(); let en = new Date(ds + "T" + def.e + ":00").getTime(); if (en <= st) en += 864e5;
       row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4)); g.telatMin += row.late; if (row.late > tol) g.telat++;
       if (rec.out) { row.early = Math.max(0, Math.round((en - rec.out.ts) / 6e4)); if (row.early > 0) g.pulangCepat += row.early; }
@@ -3853,7 +3857,7 @@ const trainTodo = sid => trainDocs().filter(d => docOkFor(d, sid) && !passed(sid
 function perfAuto(mo, sid) {
   const a = attStats(mo, sid);
   const hadir = a.jadwal ? Math.round(100 * a.masuk / a.jadwal) : null;
-  const tepat = a.masuk ? Math.round(100 * (1 - Math.min(1, a.telatHitung / 450))) : null;
+  const tepat = a.masuk && !isFlex(sid) ? Math.round(100 * (1 - Math.min(1, a.telatHitung / 450))) : null;
   const docs = S.docs.filter(d => docOkFor(d, sid)), sop = docs.length ? Math.round(100 * docs.filter(d => (d.ack?.[sid] || 0) >= (d.updatedAt || 0) && d.ack?.[sid]).length / docs.length) : null;
   const td = trainDocs().filter(d => docOkFor(d, sid)), latih = td.length ? Math.round(100 * td.filter(d => passed(sid, d)).length / td.length) : null;
   return {a, hadir, tepat, sop, latih};
