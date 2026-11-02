@@ -1001,8 +1001,10 @@ async function submitRecv(form) {
 }
 
 /* ---------- CLOSING ---------- */
+/* closing setelah tengah malam (sebelum jam 04.00) tetap dihitung untuk hari operasional sebelumnya */
+function bizDay() { return new Date().getHours() < 4 ? addDays(today(), -1) : today(); }
 function viewClosing() {
-  const t = today(), cl = S.closings.find(c => c.date === t);
+  const t = bizDay(), cl = S.closings.find(c => c.date === t);
   const areas = role() === "kitchen" ? ["kitchen"] : role() === "headbar" ? ["bar", "kitchen"] : ["bar", "kitchen"];
   const hist = S.closings.slice(0, 14);
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Closing harian</h1></div><div class="row"><button class="btn" data-act="waste">Catat waste</button></div></div>
@@ -1022,9 +1024,10 @@ function closingSummary(sh) {
 }
 function modalClosing(a) {
   const items = itemsArr().filter(i => i.area === a);
-  openModal(`<form data-submit="closing" data-a="${a}" class="modal wide" role="dialog" aria-label="Closing ${AREAS[a]}">
-    <div class="modal-h"><h2>Closing ${AREAS[a]} · ${fdate(today())}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+  openModal(`<form data-submit="closing" data-a="${a}" data-d="${bizDay()}" class="modal wide" role="dialog" aria-label="Closing ${AREAS[a]}">
+    <div class="modal-h"><h2>Closing ${AREAS[a]} · ${fdate(bizDay())}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Isi <b>sisa</b> hasil hitung fisik di ${AREAS[a].toLowerCase()} dan <b>spoil</b> (terbuang) yang belum dicatat lewat form waste. Pemakaian = stok sistem − sisa − spoil.</p>
+    <div id="cl-draft"></div>
     <div><button type="button" class="btn sm" data-act="copySys">Salin angka sistem ke kolom sisa yang kosong</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Sistem</th><th>Sisa fisik</th><th>Spoil</th><th>Alasan spoil</th></tr></thead><tbody>
     ${(() => { const WT = wasteToday(); return items.map(i => `<tr><td><b>${esc(i.name)}</b><span class="sub">${esc(i.unit)}${WT[i.id] ? ` · waste tercatat ${fq(WT[i.id])}` : ""}</span></td><td class="r num" data-sys="${i.id}">${fq(stockOf(i.id).area)}</td>
@@ -1033,8 +1036,24 @@ function modalClosing(a) {
       <td><select id="cr-${i.id}" name="r_${i.id}" style="min-width:130px"><option value="">-</option>${SPOIL_REASONS.map(x => `<option>${x}</option>`).join("")}</select></td></tr>`).join(""); })()}
     </tbody></table></div>
     <label class="f">Catatan closing<textarea id="cl-note" name="note" rows="2" maxlength="300" placeholder="mis. mesin grinder 2 bermasalah, susu oat datang terlambat"></textarea></label>
-    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim laporan closing</button></div></form>`);
+    <div class="foot"><button type="button" class="btn" data-act="close">Tutup (draf tersimpan)</button><button class="btn pri" type="submit">Kirim laporan closing</button></div></form>`);
+  restoreDraft($("#modal form[data-submit=closing]"));
 }
+/* ===== Draf closing otomatis (2 Nov 2026): isian tersimpan di HP setiap diketik, pulih bila aplikasi tertutup/crash ===== */
+const draftKey = f => f && f.dataset.submit === "closing" ? "rouna_draft_closing_" + (f.dataset.d || bizDay()) + "_" + f.dataset.a + "_" + S.me : null;
+function saveDraft(f) {
+  const k = draftKey(f); if (!k) return; const v = {};
+  [...f.elements].forEach(el => { if (el.name && el.value !== "" && el.type !== "submit") v[el.name] = el.value; });
+  if (Object.keys(v).length) lsSet(k, JSON.stringify({at: Date.now(), v})); else lsSet(k, null);
+}
+function restoreDraft(f) {
+  const k = draftKey(f); if (!k) return; let d = null; try { d = JSON.parse(lsGet(k) || "null"); } catch (e) {}
+  const box = f.querySelector("#cl-draft"); if (!d || !d.v) { if (box) box.innerHTML = `<div class="small muted">Isian tersimpan otomatis di HP ini setiap kamu mengetik. Jika aplikasi tertutup, buka lagi closing untuk melanjutkan.</div>`; return; }
+  let n = 0; Object.entries(d.v).forEach(([name, val]) => { const el = f.elements[name]; if (el) { el.value = val; if (/^s_/.test(name)) n++; } });
+  if (box) box.innerHTML = `<div class="alert ok"><div class="grow small"><b>Draf closing dipulihkan</b> · ${n} bahan sudah terisi, tersimpan ${ftime(d.at)}. Lanjutkan dari yang belum diisi.</div><button type="button" class="btn sm ghost" data-act="draftClear">Mulai dari awal</button></div>`;
+}
+document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) saveDraft(f); });
+document.addEventListener("change", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) saveDraft(f); });
 async function submitClosing(form) {
   const a = form.dataset.a, items = itemsArr().filter(i => i.area === a);
   const empty = items.filter(i => form["s_" + i.id].value === "");
@@ -1049,11 +1068,12 @@ async function submitClosing(form) {
   }
   const btn = form.querySelector("[type=submit]"); btn.disabled = true; btn.textContent = "Menyimpan…";
   const ok = await guard(async () => {
-    await mergeDoc("closings/" + today(), {shifts: {[a]: {by: S.me, ts: Date.now(), lines, note: form.note.value.trim()}}}, {date: today()});
+    const cd = form.dataset.d || bizDay();
+    await mergeDoc("closings/" + cd, {shifts: {[a]: {by: S.me, ts: Date.now(), lines, note: form.note.value.trim()}}}, {date: cd});
     for (const i of items) if (lines[i.id].sisa !== (+stockOf(i.id).area || 0)) await setStock(i.id, {area: lines[i.id].sisa});
     await logMoves(spoilLog);
   });
-  if (ok) { closeModal(); toast("Closing " + AREAS[a] + " tersimpan."); } else { btn.disabled = false; btn.textContent = "Kirim laporan closing"; }
+  if (ok) { lsSet(draftKey(form), null); closeModal(); toast("Closing " + AREAS[a] + " tersimpan."); } else { btn.disabled = false; btn.textContent = "Kirim laporan closing"; }
 }
 
 /* ---------- SALES (Olsera) ---------- */
@@ -2632,8 +2652,9 @@ async function seedItems() {
 }
 
 /* ---------- modal & confirm ---------- */
-function openModal(html) { $("#modal").innerHTML = `<div class="modal-bg" data-act="bg">${html}</div>`; const f = $("#modal input:not([type=hidden]):not([hidden]),#modal select"); if (f && window.innerWidth > 700) f.focus(); }
+function openModal(html) { try { if (!(history.state && history.state.rm)) history.pushState({rm: 1}, ""); } catch (e) {} $("#modal").innerHTML = `<div class="modal-bg" data-act="bg">${html}</div>`; const f = $("#modal input:not([type=hidden]):not([hidden]),#modal select"); if (f && window.innerWidth > 700) f.focus(); }
 function closeModal() { $("#modal").innerHTML = ""; S.modal = null; }
+window.addEventListener("popstate", () => { if ($("#modal").innerHTML) closeModal(); });
 let CONFIRM = null;
 function confirmBox(title, text, label, fn) {
   CONFIRM = fn;
@@ -4079,7 +4100,7 @@ const ACT = {
   backup: () => backupAll(),
   restore: () => $("#restore-file")?.click(),
   close: () => closeModal(),
-  bg: (b, e) => { if (e.target === b) closeModal(); },
+  bg: (b, e) => { if (e.target === b && !b.querySelector("form[data-submit=closing]")) closeModal(); },
   move: b => modalMove(b.dataset.k),
   newOrder: () => modalOrder(),
   orderLow: () => modalOrder(lowPreset()),
@@ -4087,7 +4108,8 @@ const ACT = {
   ordCancel: b => confirmBox("Batalkan pengajuan?", "Pengajuan order ini akan dibatalkan.", "Batalkan", async () => { await guard(() => S.db.doc("orders/" + b.dataset.id).update({status: "dibatalkan", cancelledAt: Date.now()})); }),
   exportReport: () => exportReport(),
   closing: b => { const a = b.dataset.a || (role() === "kitchen" ? "kitchen" : "bar"); if (S.closings.find(c => c.date === today())?.shifts?.[a]) { S.view = "closing"; render(); return toast("Closing " + AREAS[a] + " hari ini sudah dikirim."); } modalClosing(a); },
-  copySys: () => document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value === "") i.value = i.dataset.sysv; }),
+  copySys: () => { document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value === "") i.value = i.dataset.sysv; }); saveDraft($("#modal form[data-submit=closing]")); },
+  draftClear: () => { const f = $("#modal form[data-submit=closing]"); if (!f) return; lsSet(draftKey(f), null); f.reset(); restoreDraft(f); toast("Draf dihapus."); },
   addLine: b => { const k = b.dataset.k; $("#lines").insertAdjacentHTML("beforeend", lineRow("", "", null, k === "in" ? `<input name="price" type="number" step="any" min="0" placeholder="Rp/satuan" aria-label="Harga per satuan" style="display:${$("#mv-price")?.checked ? "block" : "none"}">` : "")); fixInLines(); },
   rmLine: b => { const l = b.closest(".line"); if (document.querySelectorAll("#lines .line").length > 1) l.remove(); else { l.querySelector("select").value = ""; l.querySelector("input").value = ""; } },
   togglePrice: () => fixInLines(),
