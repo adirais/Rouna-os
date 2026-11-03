@@ -1149,6 +1149,14 @@ function usageReport(date, rows) {
   }).filter(r => r.t || r.a).sort((x, y) => (y.done - x.done) || (Math.abs(y.d * y.cost) - Math.abs(x.d * x.cost)));
   return {rows: out, sum, closed, missing: Object.keys(AREAS).filter(a => !closed.includes(a)), noRec: Object.entries(noRec).map(([name, qty]) => ({name, qty})).sort((x, y) => y.qty - x.qty), hasSales: src.length > 0};
 }
+/* jumlah + satuan yang mudah dibaca: 2.080 ml → 2,08 L, 1.500 g → 1,5 kg (4 Nov 2026) */
+function fqu(v, unit) {
+  const u = String(unit || "").trim(), lu = u.toLowerCase(), n = +v || 0, big = Math.abs(n) >= 1000;
+  const f = x => (Math.round(x * 100) / 100).toLocaleString("id-ID", {maximumFractionDigits: 2});
+  if (big && (lu === "g" || lu === "gr" || lu === "gram")) return f(n / 1000) + " kg";
+  if (big && (lu === "ml" || lu === "mililiter")) return f(n / 1000) + " L";
+  return fq(n) + (u ? " " + esc(u) : "");
+}
 function usageView(date, rows) {
   const R = usageReport(date, rows), S2 = R.sum, gap = S2.a - S2.t;
   const CH = {ok: ["ok", "Sesuai"], over: ["crit", "Lebih pakai"], under: ["warn", "Kurang pakai"], neg: ["warn", "Cek stok"], norec: ["warn", "Di luar resep"], open: ["", "Belum closing"]};
@@ -1156,12 +1164,12 @@ function usageView(date, rows) {
     !R.closed.length ? `<b>Belum ada closing ${fdate(date)}.</b> Angka aktual muncul setelah closing bar dan kitchen dikirim.` : R.missing.length ? `<b>Closing ${R.missing.map(a => AREAS[a]).join(" dan ")} belum masuk.</b> Bahan di area itu belum dihitung dalam selisih.` : "",
     R.noRec.length ? `<b>${R.noRec.length} produk belum punya resep</b>, jadi teori belum lengkap dan selisih bisa terlihat lebih besar.` : ""
   ].filter(Boolean);
-  const row = r => { const ch = CH[r.st]; return `<details class="ub"><summary>
+  const row = r => { const ch = CH[r.st], q = v => fqu(v, r.unit); return `<details class="ub"><summary>
       <span class="ub-n"><b>${esc(r.name)}</b><span class="chip ${ch[0]}">${ch[1]}</span></span>
-      <span class="ub-v"><span><small>Teori</small>${fq(r.t)}</span><span><small>Aktual</small>${r.done ? fq(r.a) : "-"}</span><span><small>Selisih</small>${r.done ? (r.d > 0 ? "+" : "") + fq(r.d) + (r.t ? ` <i>${pct(r.p)}</i>` : "") : "-"}</span><span><small>Nilai</small>${r.done ? (r.d > 0 ? "+" : "") + rpk(r.d * r.cost) : "-"}</span></span>
+      <span class="ub-v"><span><small>Teori</small>${q(r.t)}</span><span><small>Aktual</small>${r.done ? q(r.a) : "-"}</span><span><small>Selisih</small>${r.done ? (r.d > 0 ? "+" : "") + q(r.d) + (r.t ? ` <i>${pct(r.p)}</i>` : "") : "-"}</span><span><small>Nilai</small>${r.done ? (r.d > 0 ? "+" : "") + rpk(r.d * r.cost) : "-"}</span></span>
     </summary><div class="ub-d">
       <div class="small muted">Satuan: ${esc(r.unit || "-")}${r.done ? "" : " · bahan ini belum ada di closing"}</div>
-      ${r.by.length ? `<div class="tbl-wrap"><table><thead><tr><th>Produk terjual</th><th class="r">Qty</th><th class="r">Takaran</th><th class="r">Pemakaian</th></tr></thead><tbody>${r.by.map(b => `<tr><td>${esc(b.name)}</td><td class="r num">${fq(b.qty)}</td><td class="r num">${fq(b.per)}</td><td class="r num">${fq(b.use)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">Tidak ada produk terjual yang memakai bahan ini menurut resep.</div>`}
+      ${r.by.length ? `<div class="tbl-wrap"><table><thead><tr><th>Produk terjual</th><th class="r">Qty</th><th class="r">Takaran</th><th class="r">Pemakaian</th></tr></thead><tbody>${r.by.map(b => `<tr><td>${esc(b.name)}</td><td class="r num">${fq(b.qty)}</td><td class="r num">${q(b.per)}</td><td class="r num">${q(b.use)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">Tidak ada produk terjual yang memakai bahan ini menurut resep.</div>`}
     </div></details>`; };
   return `${warn.map(w => `<div class="alert warn"><div class="grow small">${w}</div></div>`).join("")}
   ${(() => { /* dipisah per area: Bar, Kitchen, lainnya (4 Nov 2026) */
