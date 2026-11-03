@@ -805,6 +805,7 @@ function viewHome() {
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
   <div class="qa">${quick.join("")}</div>
   ${installCard()}
+  ${salesCard()}
   ${targetCard()}
   ${briefPanel()}
   <div class="grid3">
@@ -2772,6 +2773,25 @@ const canShift = () => ["owner", "manager", "headbar", "finance"].includes(realR
 /* ===== Target & prime cost ===== */
 const tgtMonth = () => +S.settings.tgtMonth || 0;
 const primeMax = () => +S.settings.primeMax || 48;
+/* Beranda Owner & Finance: omzet bulan berjalan + rata-rata penjualan harian (4 Nov 2026) */
+function salesCard() {
+  if (!["owner", "finance"].includes(realRole())) return "";
+  const t = today(), mo = t.slice(0, 7), dim = daysInMonth(mo), days = [];
+  for (let d = 1; d <= dim; d++) { const ds = mo + "-" + pad(d); if (ds > t) break; const v = revenueOn(ds); days.push({ds, v}); }
+  const got = days.filter(x => x.v > 0);
+  if (!got.length) return `<section class="panel"><div class="panel-h"><h2>Penjualan ${monthLabel(mo)}</h2></div><div class="small muted">Belum ada laporan penjualan bulan ini. Unggah laporan Olsera di menu Penjualan.</div></section>`;
+  const mtd = got.reduce((x, d) => x + d.v, 0), avg = mtd / got.length, last = got[got.length - 1], best = got.reduce((a, b) => b.v > a.v ? b : a);
+  const vs = avg ? (last.v - avg) / avg : 0, proj = avg * dim, mx = Math.max(...days.map(d => d.v), 1);
+  const missing = days.filter(d => d.ds < t && !d.v).length;
+  return `<section class="panel"><div class="panel-h"><h2>Penjualan ${monthLabel(mo)}</h2><span class="small muted">diperbarui dari laporan Olsera · ${got.length} hari tercatat</span></div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="kpi"><span class="eyebrow">Omzet bulan ini</span><span class="v">${rpk(mtd)}</span><span class="small muted">s.d. ${fdate(last.ds)}</span></div>
+      <div class="kpi"><span class="eyebrow">Rata-rata per hari</span><span class="v">${rpk(avg)}</span><span class="small muted">perkiraan sebulan ${rpk(proj)}</span></div>
+      <div class="kpi"><span class="eyebrow">Hari terakhir</span><span class="v">${rpk(last.v)}</span><span class="small muted">${fdate(last.ds)} · <span style="color:${vs >= 0 ? "var(--ok)" : "var(--crit)"}">${vs >= 0 ? "+" : ""}${pct(vs)}</span> dari rata-rata</span></div>
+      <div class="kpi"><span class="eyebrow">Hari terbaik</span><span class="v">${rpk(best.v)}</span><span class="small muted">${fdate(best.ds)}</span></div></div>
+    <div style="display:flex;align-items:flex-end;gap:3px;height:64px" role="img" aria-label="Omzet harian ${monthLabel(mo)}">${[...days, ...Array(dim - days.length).fill(null)].map(d => d ? `<div title="${fdate(d.ds)}: ${d.v ? rp(d.v) : "belum ada laporan"}" style="flex:1;min-width:3px;height:${d.v ? Math.max(4, d.v / mx * 64) : 3}px;border-radius:3px;background:${d.v ? (d.ds === last.ds ? "var(--ink)" : "var(--brand)") : "var(--line)"}"></div>` : `<div style="flex:1;min-width:3px;height:3px;border-radius:3px;background:var(--sunk)"></div>`).join("")}</div>
+    ${missing ? `<div class="small muted">${missing} hari belum ada laporan Olsera, jadi omzet dan rata-rata belum lengkap.</div>` : ""}</section>`;
+}
 function revenueOn(date) {
   const c = cashEntries(date.slice(0, 7)).filter(x => x.date === date);
   if (c.length) return c.reduce((s, x) => s + cashTotal(x), 0);
