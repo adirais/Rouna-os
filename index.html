@@ -1164,12 +1164,18 @@ function usageView(date, rows) {
       ${r.by.length ? `<div class="tbl-wrap"><table><thead><tr><th>Produk terjual</th><th class="r">Qty</th><th class="r">Takaran</th><th class="r">Pemakaian</th></tr></thead><tbody>${r.by.map(b => `<tr><td>${esc(b.name)}</td><td class="r num">${fq(b.qty)}</td><td class="r num">${fq(b.per)}</td><td class="r num">${fq(b.use)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">Tidak ada produk terjual yang memakai bahan ini menurut resep.</div>`}
     </div></details>`; };
   return `${warn.map(w => `<div class="alert warn"><div class="grow small">${w}</div></div>`).join("")}
-  ${R.closed.length ? `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-    <div class="kpi"><span class="eyebrow">Teori (resep)</span><span class="v">${rpk(S2.t)}</span></div>
-    <div class="kpi"><span class="eyebrow">Aktual (closing)</span><span class="v">${rpk(S2.a)}</span></div>
-    <div class="kpi"><span class="eyebrow">Selisih bersih</span><span class="v">${gap > 0 ? "+" : ""}${rpk(gap)}</span><span class="small muted">${S2.t ? pct(gap / S2.t) + " dari teori" : "-"}</span></div>
-    <div class="kpi"><span class="eyebrow">Lebih pakai &gt;5%</span><span class="v">${rpk(S2.over)}</span><span class="small muted">${S2.nOver} bahan</span></div></div>` : ""}
-  ${R.rows.length ? `<div>${R.rows.map(row).join("")}</div>` : `<div class="small muted">Belum ada bahan yang bisa dihitung. Lengkapi resep produk.</div>`}
+  ${(() => { /* dipisah per area: Bar, Kitchen, lainnya (4 Nov 2026) */
+    const areaOf = r => S.items[r.id]?.area || "lain", groups = [...Object.keys(AREAS), "lain"].map(a => ({a, rows: R.rows.filter(r => (AREAS[areaOf(r)] ? areaOf(r) : "lain") === a)})).filter(g => g.rows.length);
+    if (!groups.length) return `<div class="small muted">Belum ada bahan yang bisa dihitung. Lengkapi resep produk.</div>`;
+    return groups.map(g => { const d = g.rows.filter(r => r.done), t = d.reduce((x, r) => x + r.t * r.cost, 0), a = d.reduce((x, r) => x + r.a * r.cost, 0), gp = a - t, ov = d.filter(r => r.st === "over"), ovv = ov.reduce((x, r) => x + r.d * r.cost, 0), closed = g.a === "lain" ? d.length > 0 : R.closed.includes(g.a);
+      return `<section class="panel" style="gap:10px;margin:0"><div class="panel-h"><h2>${g.a === "lain" ? "Lainnya" : AREAS[g.a]}</h2>${g.a !== "lain" ? `<span class="chip ${closed ? "ok" : "warn"}">${closed ? "Sudah closing" : "Belum closing"}</span>` : ""}</div>
+      ${closed ? `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+        <div class="kpi"><span class="eyebrow">Teori (resep)</span><span class="v">${rpk(t)}</span></div>
+        <div class="kpi"><span class="eyebrow">Aktual (closing)</span><span class="v">${rpk(a)}</span></div>
+        <div class="kpi"><span class="eyebrow">Selisih</span><span class="v">${gp > 0 ? "+" : ""}${rpk(gp)}</span><span class="small muted">${t ? pct(gp / t) + " dari teori" : "-"}</span></div>
+        <div class="kpi"><span class="eyebrow">Lebih pakai &gt;5%</span><span class="v">${rpk(ovv)}</span><span class="small muted">${ov.length} bahan</span></div></div>` : `<div class="small muted">Angka aktual ${g.a === "lain" ? "" : AREAS[g.a].toLowerCase() + " "}muncul setelah closing dikirim. Di bawah ini baru pemakaian menurut resep.</div>`}
+      <div>${g.rows.map(row).join("")}</div></section>`; }).join("");
+  })()}
   ${R.noRec.length ? `<details class="ub"><summary><b>Produk tanpa resep (${R.noRec.length})</b></summary><div class="ub-d list">${R.noRec.map(n => `<div class="li"><span class="grow">${esc(n.name)}<span class="sub small muted">${fq(n.qty)} terjual</span></span>${canRecipe() ? `<button type="button" class="btn sm" data-act="recipe" data-p="${esc(n.name)}">+ resep</button>` : ""}</div>`).join("")}</div></details>` : ""}
   <div class="small muted">Ketuk bahan untuk melihat produk penyumbangnya. Aktual = stok sistem − sisa fisik − spoil. Lebih pakai bisa berarti porsi berlebih, bocor, atau spoil belum dicatat. Cek stok berarti ada barang masuk yang belum tercatat. Di luar resep berarti bahan terpakai tapi tidak ada di resep produk yang terjual hari itu.</div>`;
 }
