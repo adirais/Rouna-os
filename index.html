@@ -2810,7 +2810,7 @@ function targetCard() {
 }
 function primeCard(P) {
   const r = P.rev || 0; if (!r) return "";
-  const cogs = P.bb + P.vendor, lab = P.labor, pc = (cogs + lab) / r, mx = primeMax() / 100;
+  const cogs = typeof hppBases === "function" ? hppBases(P).v : P.bb + P.vendor, lab = P.labor, pc = (cogs + lab) / r, mx = primeMax() / 100;
   const cls = pc <= mx ? "ok" : pc <= mx + .05 ? "warn" : "crit";
   return `<section class="panel"><div class="panel-h"><h2>Prime cost</h2><span class="chip ${cls}">${pct(pc)} · batas ${pct(mx)}</span></div>
     <div class="stack"><i style="width:${Math.min(100, cogs / r * 100)}%;background:var(--brand)"></i><i style="width:${Math.min(100, lab / r * 100)}%;background:var(--black)"></i><s style="left:${Math.min(100, mx * 100)}%"></s></div>
@@ -3582,10 +3582,30 @@ const FNB = [
   {k: "lain", n: "Invoice bulan lalu", c: "#C4C4C4", cats: ["Utang Invoice Bulan Sebelumnya"], tip: "Bukan biaya bulan ini secara operasional; invoice bulan lalu sebaiknya dicatat di bulan barangnya diterima."}
 ];
 const FNB_LABA = 25, fnbN = n => (Math.round(n * 10) / 10).toLocaleString("id-ID", {maximumFractionDigits: 1});
-function fnbBuckets(P) {
+/* Dasar HPP (4 Nov 2026): belanja (basis kas) bisa menipu di awal bulan karena stok dibeli untuk hari-hari berikutnya.
+   Pilihan lain: harga modal Olsera, resep ROUNA (qty terjual × resep), pemakaian closing. */
+function hppBases(P) {
+  const cashV = (FNB[0].cats || []).reduce((s, c) => s + (P.byCat[c] || 0), 0), hs = salesForMonth(P.mo), h = hs.length ? hppRouna(hs) : null;
+  const L = [
+    {k: "kas", n: "Belanja bahan (kas)", v: cashV, d: "Semua belanja bahan & vendor yang dibayar bulan ini, termasuk stok untuk hari-hari berikutnya."},
+    {k: "olsera", n: "Harga modal Olsera", v: +P.hppOls || 0, d: "Dari laporan Olsera: qty terjual × harga modal yang diisi di Olsera.", off: !(+P.hppOls > 0)},
+    {k: "rouna", n: "Resep ROUNA", v: h ? h.hpp : 0, d: h ? `Qty terjual × biaya resep di ROUNA OS${h.missList.length ? ` · ${h.missList.length} produk belum punya resep` : ""}.` : "Butuh laporan Penjualan berdasarkan SKU.", off: !(h && h.hpp > 0)},
+    {k: "pakai", n: "Pemakaian closing", v: (+P.use || 0) + (+P.waste || 0), d: `Bahan yang benar-benar habis menurut closing (${P.nClose} laporan), termasuk waste. Lengkap bila bar & kitchen closing setiap hari.`, off: !P.nClose}];
+  let sel = S.ui.hppBasis; if (!L.find(x => x.k === sel && !x.off)) sel = !L[1].off ? "olsera" : "kas";
+  return {list: L, sel, v: L.find(x => x.k === sel).v};
+}
+function hppBasisPanel(P, HB) {
+  const r = P.rev || 0;
+  return `<div style="display:grid;gap:8px"><div class="row" style="gap:8px;align-items:baseline"><b>Dasar HPP</b><span class="small muted">pilih cara menghitung HPP untuk dashboard ini</span></div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">${HB.list.map(x => `<button type="button" class="kpi kpi-btn" data-act="ui" data-k="hppBasis" data-v="${x.k}" ${x.off ? "disabled" : ""} aria-pressed="${HB.sel === x.k}" style="${HB.sel === x.k ? "border:2px solid var(--ink);" : ""}${x.off ? "opacity:.5;cursor:not-allowed;" : ""}">
+      <span class="eyebrow">${esc(x.n)}</span><span class="v">${x.off ? "–" : pct(r ? x.v / r : 0)}</span><span class="small muted">${x.off ? "belum ada data" : rpk(x.v)}${HB.sel === x.k ? " · dipakai" : ""}</span></button>`).join("")}</div>
+    <div class="small muted">${esc(HB.list.find(x => x.k === HB.sel).d)}${HB.sel !== "kas" && HB.list[0].v > HB.v ? ` Belanja bahan ${rpk(HB.list[0].v)} lebih besar ${rpk(HB.list[0].v - HB.v)}: biasanya stok yang masih tersimpan untuk hari berikutnya, atau belanja yang terlalu banyak.` : ""}</div></div>`;
+}
+function fnbBuckets(P, hppV) {
   const r = P.rev || 0, used = new Set(), out = FNB.map(b => {
     let v = 0;
     if (b.k === "labor") v = P.labor; else (b.cats || []).forEach(c => { v += P.byCat[c] || 0; used.add(c); });
+    if (b.k === "hpp" && hppV != null) v = hppV;
     if (b.depr && typeof deprTotal === "function") v += deprTotal(P.mo) || 0;
     return {...b, v, p: r ? v / r * 100 : 0};
   });
@@ -3609,7 +3629,7 @@ function fnbDashboard(P) {
         <div class="kpi"><span class="eyebrow">HPP Olsera</span><span class="v">${pct(P.rev ? P.hppOls / P.rev : 0)}</span><span class="small muted">${rp(P.hppOls)} · standar ≤32%</span></div>
         ${h ? `<div class="kpi"><span class="eyebrow">HPP versi ROUNA</span><span class="v">${pct(P.rev ? h.hpp / P.rev : 0)}</span><span class="small muted">${rp(h.hpp)}${h.missList.length ? ` · ${h.missList.length} produk tanpa resep` : ""}</span></div>` : ""}
         <div class="kpi"><span class="eyebrow">Bahan terpakai (closing)</span><span class="v">${pct(P.rev ? (P.use + P.waste) / P.rev : 0)}</span><span class="small muted">${rp(P.use + P.waste)} · ${P.nClose} hari closing</span></div></div></section>`; }
-  const B = fnbBuckets(P), r = P.rev, profit = {k: "laba", n: "Laba bersih", c: "#3E9E6A", v: Math.max(0, B.laba), p: B.lp};
+  const HB = hppBases(P), B = fnbBuckets(P, HB.v), r = P.rev, profit = {k: "laba", n: "Laba bersih", c: "#3E9E6A", v: Math.max(0, B.laba), p: B.lp};
   const parts = [...B.list, profit], total = B.laba >= 0 ? r : B.cost;
   const labaSt = B.lp >= FNB_LABA ? ["ok", "Sesuai standar"] : B.lp >= 10 ? ["warn", "Di bawah standar"] : ["crit", B.lp < 0 ? "Rugi" : "Jauh di bawah"];
   const grossSt = B.gross >= 68 ? ["ok", "Sesuai standar"] : B.gross >= 63 ? ["warn", "Sedikit di bawah"] : ["crit", "Rendah"];
@@ -3621,6 +3641,7 @@ function fnbDashboard(P) {
   if (B.lp < FNB_LABA) insights.push([labaSt[0], `Laba bersih ${fnbN(B.lp)}% (target ${FNB_LABA}%)`, B.lp < 0 ? "Bulan ini rugi. Mulai dari pos dengan status Terlalu tinggi di tabel." : `Kurang ± ${rp((FNB_LABA - B.lp) / 100 * r)} dari target. Mulai dari pos yang di atas standar.`]);
   if (!insights.length) insights.push(["ok", "Semua pos dalam batas sehat", `Laba bersih ${B.lp.toFixed(1).replace(".", ",")}% dari omzet. Pertahankan disiplin pencatatan dan closing harian.`]);
   return `<section class="panel"><div class="panel-h"><h2>Kesehatan bisnis F&B · ${monthLabel(P.mo)}</h2><span class="chip ${labaSt[0]}">Laba ${labaSt[1]}</span></div>
+    ${hppBasisPanel(P, HB)}
     <div class="row" style="gap:20px;align-items:center;flex-wrap:wrap">
       ${donutSvg(parts, total, (B.lp).toFixed(1).replace(".", ",") + "%", "laba bersih")}
       <div style="display:grid;gap:6px;flex:1 1 240px;min-width:0">${parts.map(x => `<div class="row small" style="gap:8px;flex-wrap:nowrap"><span style="width:12px;height:12px;border-radius:3px;background:${x.c};flex:none"></span><span class="grow">${esc(x.n)}</span><b class="num">${(x.k === "laba" ? B.lp : x.p).toFixed(1).replace(".", ",")}%</b></div>`).join("")}
