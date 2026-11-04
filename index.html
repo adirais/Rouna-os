@@ -1910,7 +1910,7 @@ function viewExpenses(mo) {
     <select id="ex-f" data-ui="exCat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${EXP_GROUPS.map(([g, cs]) => `<optgroup label="${esc(g)}"><option value="g:${esc(g)}" ${u.exCat === "g:" + g ? "selected" : ""}>Semua ${esc(g)}</option>${cs.filter(c => cats.includes(c)).map(c => `<option value="${esc(c)}" ${u.exCat === c ? "selected" : ""}>${esc(catLabel(c))}</option>`).join("")}</optgroup>`).join("")}</select></div>
     <div class="panel-h"><span class="small muted">${ex.length} transaksi</span><span class="num"><b>${rp(tot)}</b></span></div>
     ${ex.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Detail</th><th>Kategori</th><th>Metode</th><th>Dibayar kepada</th><th class="r">Biaya</th><th></th></tr></thead><tbody>
-    ${ex.slice(0, 400).map(e => `<tr><td class="small" style="white-space:nowrap">${fdate(e.date)}${e.nodate ? ' <span class="chip warn">?</span>' : ""}</td><td>${esc(e.note || "-")}${e.edit ? `<span class="sub small muted">Diubah ${esc(S.staff[e.edit.by]?.name || "-")} · ${fdt(e.edit.at)}</span>` : ""}</td><td class="small">${esc(catLabel(e.cat))}</td><td class="small muted">${esc(e.pay || "")}</td><td class="small">${esc(e.to || "")}</td><td class="r num">${rp(e.amt)}</td><td class="r" style="white-space:nowrap">${canEdit ? `<button class="btn sm ghost" data-act="expEdit" data-id="${e.id}" data-m="${mo}" aria-label="Ubah">Ubah</button><button class="btn sm ghost" data-act="expVoid" data-id="${e.id}" data-m="${mo}" aria-label="Batalkan">✕</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">-</div>`}</section>`;
+    ${ex.slice(0, 400).map(e => `<tr><td class="small" style="white-space:nowrap">${fdate(e.date)}${e.nodate ? ' <span class="chip warn">?</span>' : ""}</td><td>${esc(e.note || "-")}${e.edit ? `<span class="sub small muted">Diubah ${esc(S.staff[e.edit.by]?.name || "-")} · ${fdt(e.edit.at)}</span>` : ""}</td><td class="small">${esc(catLabel(e.cat))}</td><td class="small muted">${esc(e.pay || "")}</td><td class="small">${esc(e.to || "")}</td><td class="r num">${rp(e.amt)}</td><td class="r" style="white-space:nowrap">${canEdit ? `<button class="btn sm ghost" data-act="expEdit" data-id="${e.id}" data-m="${mo}" aria-label="Ubah">Ubah</button><button class="btn sm ghost" data-act="expVoid" data-id="${e.id}" data-m="${mo}" aria-label="Hapus" title="Hapus">✕</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">-</div>`}</section>`;
 }
 function modalExpense(m, id) {
   const e = m && id ? S.expenses.find(x => x.month === m)?.rec?.[id] : null;
@@ -1970,7 +1970,7 @@ function modalCash(id) {
       <label class="f">QR POS<input id="ca-qp" name="qrPos" type="number" min="0" step="any" value="${v("qrPos")}"></label><label class="f">QR aktual (mutasi)<input id="ca-qa" name="qrAct" type="number" min="0" step="any" value="${v("qrAct")}"></label>
       <label class="f">Card<input id="ca-cd" name="card" type="number" min="0" step="any" value="${v("card")}"></label><label class="f">Total penjualan (Olsera)<input id="ca-t" name="total" type="number" min="0" step="any" value="${v("total")}" placeholder="kosong = tunai + QR + card"></label></div>
     <label class="f">Catatan<input id="ca-n" name="note" maxlength="120" value="${esc(c.note || "")}"></label>
-    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+    <div class="foot">${id && canFin() ? `<button type="button" class="btn danger" data-act="cashDel" data-id="${id}" style="margin-right:auto">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitCash(form) {
   const date = form.date.value, mo = date.slice(0, 7), oid = form.dataset.id || "";
@@ -2428,7 +2428,7 @@ function viewVoucher() {
     ${olsDays.length && Math.abs(gap) >= 1000 ? `<div class="alert ${gap > 0 ? "warn" : "acc"}"><div class="grow">${gap > 0 ? `<b>${rp(gap)}</b> compliment di Olsera belum dicatat atas nama karyawan pada hari yang sudah ada laporannya.` : `Catatan voucher ${rp(-gap)} lebih besar dari compliment di Olsera. Cek tanggal atau nominalnya.`}</div></div>` : ""}
     <div class="tbl-wrap"><table><thead><tr><th>Nama</th><th class="r">Terpakai</th><th class="r">Sisa</th><th style="min-width:110px"></th></tr></thead><tbody>
     ${staff.map(([id, s]) => { const u = voucherUsed(mo, id), l = q - u; return `<tr><td>${esc(s.name)}<span class="sub">${ROLES[s.role]}</span></td><td class="r num">${rp(u)}</td><td class="r num" style="color:${l <= 0 ? "var(--crit)" : l < q * .2 ? "var(--warn)" : "inherit"}">${rp(Math.max(0, l))}</td><td><div class="bar ${l < q * .2 ? "low" : ""}"><i style="width:${Math.min(100, u / q * 100)}%"></i></div></td></tr>`; }).join("")}</tbody></table></div>
-    ${ent.length ? `<details><summary class="small" style="cursor:pointer;font-weight:600">Riwayat pemakaian (${ent.length})</summary><div class="list">${ent.slice(0, 80).map(r => `<div class="li"><div class="grow"><b>${esc(S.staff[r.staffId]?.name || "Staf dihapus")}</b><span class="sub small muted">${fdate(r.date)}${r.note ? " · " + esc(r.note) : ""} · dicatat ${esc(S.staff[r.by]?.name || "-")}</span></div><span class="num">${rp(r.amt)}</span>${isMgr() ? `<button class="btn sm ghost" data-act="voucherVoid" data-id="${r.id}" aria-label="Batalkan catatan">✕</button>` : ""}</div>`).join("")}</div></details>` : `<div class="small muted">Belum ada pemakaian voucher bulan ini.</div>`}
+    ${ent.length ? `<details><summary class="small" style="cursor:pointer;font-weight:600">Riwayat pemakaian (${ent.length})</summary><div class="list">${ent.slice(0, 80).map(r => `<div class="li"><div class="grow"><b>${esc(S.staff[r.staffId]?.name || "Staf dihapus")}</b><span class="sub small muted">${fdate(r.date)}${r.note ? " · " + esc(r.note) : ""} · dicatat ${esc(S.staff[r.by]?.name || "-")}</span></div><span class="num">${rp(r.amt)}</span>${isMgr() || canFin() ? `<button class="btn sm ghost" data-act="voucherVoid" data-id="${r.id}" aria-label="Batalkan catatan">✕</button>` : ""}</div>`).join("")}</div></details>` : `<div class="small muted">Belum ada pemakaian voucher bulan ini.</div>`}
   </section>`;
 }
 function modalVoucher() {
@@ -3105,7 +3105,13 @@ async function slipPdf(onlyId) {
 }
 
 /* ===== Utang supplier ===== */
-const paidOf = p => Object.values(p.paid || {}).reduce((s, x) => s + (+x.amt || 0), 0);
+async function voidPayment(p, pid, x) {
+  const v = {void: true, voidBy: S.me, voidAt: Date.now()};
+  if (x.expId && x.date) { const mo = x.date.slice(0, 7); if (S.expenses.find(e => e.month === mo)?.rec?.[x.expId]) await mergeDoc("expenses/" + mo, {rec: {[x.expId]: v}}, {month: mo}); }
+  await mergeDoc("payables/" + p.id, {paid: {[pid]: v}}, {});
+  if (p.orderId && S.orders.find(o => o.id === p.orderId)?.pays?.[pid]) await mergeDoc("orders/" + p.orderId, {pays: {[pid]: v}}, {});
+}
+const paidOf = p => Object.values(p.paid || {}).filter(x => !x.void).reduce((s, x) => s + (+x.amt || 0), 0);
 const openPay = () => S.payables.filter(p => !p.void && paidOf(p) < (+p.amt || 0) - 1);
 function dueTag(p) {
   if (!p.due) return `<span class="chip">Tanpa jatuh tempo</span>`;
@@ -3118,7 +3124,7 @@ function viewPayables() {
   const sisa = p => (+p.amt || 0) - paidOf(p), sum = arr => arr.reduce((s, p) => s + sisa(p), 0);
   const late = open.filter(p => p.due && p.due < t), soon = open.filter(p => p.due && p.due >= t && p.due <= addDays(t, 7));
   const row = p => `<div class="li" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.supplier || "-")}</b> ${dueTag(p)}<span class="sub small muted">${esc(p.inv || "tanpa nomor")} · ${fdate(p.date)}${paidOf(p) ? ` · dibayar ${rp(paidOf(p))}` : ""}${p.note ? " · " + esc(p.note) : ""}</span></div>
-    <div class="r"><div class="num"><b>${rp(sisa(p))}</b></div>${sisa(p) > 1 ? `<button class="btn sm" data-act="payInv" data-id="${p.id}">Bayar</button>` : `<span class="chip ok">Lunas</span>`}</div>
+    <div class="r"><div class="num"><b>${rp(sisa(p))}</b></div>${sisa(p) > 1 ? `<button class="btn sm" data-act="payInv" data-id="${p.id}">Bayar</button>` : `<span class="chip ok">Lunas</span>`}${canFin() ? `<button class="btn sm ghost" data-act="payDel" data-id="${p.id}" aria-label="Hapus invoice" title="Hapus invoice">✕</button>` : ""}</div>
     ${payDocs(p)}</div>`;
   return `<div class="grid3">
     <div class="kpi"><span class="eyebrow">Utang terbuka</span><span class="v">${rpk(sum(open))}</span><span class="small muted">${open.length} invoice</span></div>
@@ -3524,10 +3530,10 @@ const fdateIso = ts => ts ? new Date(ts).toISOString().slice(0, 10) : today();
 const docName = (kind, sup, ref) => [kind, sup, ref].filter(Boolean).map(x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).filter(Boolean).join("_") + ".jpg";
 const photoBtns = (url, name, label) => `<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">${label || "Lihat"}</a><button type="button" class="btn sm ghost" data-act="dlPhoto" data-url="${esc(url)}" data-name="${esc(name)}">Unduh</button>`;
 function payDocs(p) {
-  const pays = Object.entries(p.paid || {}).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+  const pays = Object.entries(p.paid || {}).filter(([, x]) => !x.void).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
   const parts = [];
   if (p.photo) parts.push(photoBtns(p.photo, docName("invoice", p.supplier, p.inv || p.date), "Invoice"));
-  pays.forEach(([pid, x]) => parts.push(x.proof ? `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span>${photoBtns(x.proof, docName("bukti-bayar", p.supplier, x.date), "Bukti bayar")}` : `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span><span class="chip warn">tanpa bukti</span><button type="button" class="btn sm" data-act="addProof" data-id="${p.id}" data-k="${pid}">Tambah bukti</button>`));
+  pays.forEach(([pid, x]) => parts.push((x.proof ? `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span>${photoBtns(x.proof, docName("bukti-bayar", p.supplier, x.date), "Bukti bayar")}` : `<span class="small muted">Bayar ${fdate(x.date)} · ${rp(x.amt)}</span><span class="chip warn">tanpa bukti</span><button type="button" class="btn sm" data-act="addProof" data-id="${p.id}" data-k="${pid}">Tambah bukti</button>`) + (canFin() ? `<button type="button" class="btn sm ghost" data-act="payPaidDel" data-id="${p.id}" data-k="${pid}" aria-label="Hapus pembayaran" title="Hapus pembayaran">✕</button>` : "")));
   if (!p.photo) parts.unshift(`<span class="chip warn">Belum ada foto invoice</span><button type="button" class="btn sm" data-act="addInvPic" data-id="${p.id}">Upload invoice</button>`);
   return parts.length ? `<div class="row small" style="flex-basis:100%;gap:6px;flex-wrap:wrap">${parts.join("")}</div>` : "";
 }
@@ -3536,8 +3542,8 @@ function orderDocs(o) {
   const parts = [];
   if (o.invoice?.photo) parts.push(`<span class="small muted">Invoice${o.invoice.no ? " " + esc(o.invoice.no) : ""}</span>${photoBtns(o.invoice.photo, docName("invoice", o.supplier, o.invoice.no || fdateIso(o.receivedAt)))}`);
   else if (["manager", "gudang", "finance", "owner"].includes(realRole())) parts.push(`<span class="chip warn">Belum ada foto invoice</span><button type="button" class="btn sm" data-act="ordInv" data-id="${o.id}">Upload invoice</button>`);
-  Object.values(o.pays || {}).sort((a, b) => (a.date || "").localeCompare(b.date || "")).forEach(x => parts.push(`<span class="small muted">Dibayar ${fdate(x.date)} · ${rp(x.amt)}</span>${x.proof ? photoBtns(x.proof, docName("bukti-bayar", o.supplier, x.date), "Bukti bayar") : `<span class="chip">tanpa bukti</span>`}`));
-  if (o.invoice?.photo && !Object.keys(o.pays || {}).length) parts.push(`<span class="chip">Menunggu pembayaran Finance</span>`);
+  Object.values(o.pays || {}).filter(x => !x.void).sort((a, b) => (a.date || "").localeCompare(b.date || "")).forEach(x => parts.push(`<span class="small muted">Dibayar ${fdate(x.date)} · ${rp(x.amt)}</span>${x.proof ? photoBtns(x.proof, docName("bukti-bayar", o.supplier, x.date), "Bukti bayar") : `<span class="chip">tanpa bukti</span>`}`));
+  if (o.invoice?.photo && !Object.values(o.pays || {}).some(x => !x.void)) parts.push(`<span class="chip">Menunggu pembayaran Finance</span>`);
   return parts.length ? `<div class="row small" style="gap:6px;flex-wrap:wrap">${parts.join("")}</div>` : "";
 }
 function modalDocPic(kind, id, k) {
@@ -3794,7 +3800,7 @@ function modalAsset(id) {
     <label class="f">Umur pakai (bulan)<input name="life" type="number" min="1" max="360" value="${a.life ?? 48}" required></label><label class="f">Nilai sisa (Rp)<input name="residual" type="number" min="0" step="any" value="${a.residual ?? 0}"></label>
     ${id ? `<label class="f">Dijual / dibuang tanggal<input name="sold" type="date" value="${a.sold || ""}"></label>` : ""}</div>
     <label class="f">Catatan<input name="note" maxlength="120" value="${esc(a.note || "")}" placeholder="mis. supplier, nomor seri, garansi"></label>
-    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+    <div class="foot">${id && canFin() ? `<button type="button" class="btn danger" data-act="assetDel" data-id="${id}" style="margin-right:auto">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
 }
 async function submitAsset(f) {
   const id = f.dataset.id || uid(), d = {name: f.name.value.trim(), cat: f.cat.value, date: f.date.value, cost: num(f.cost.value), life: Math.max(1, num(f.life.value)), residual: num(f.residual.value), note: f.note.value.trim(), by: S.me, ts: Date.now()};
@@ -4274,8 +4280,22 @@ const ACT = {
   cashNew: () => modalCash(),
   cashEdit: b => modalCash(b.dataset.id),
   payEdit: () => modalPay(),
-  expVoid: b => { const r = S.expenses.find(x => x.month === b.dataset.m)?.rec?.[b.dataset.id]; if (!r) return; confirmBox("Batalkan biaya?", `${r.cat} · ${rp(r.amt)} · ${fdate(r.date)}. Catatan tetap tersimpan sebagai dibatalkan.`, "Batalkan", async () => { await guard(() => S.db.doc("expenses/" + b.dataset.m).update({rec: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}})); }); },
+  expVoid: b => { const r = S.expenses.find(x => x.month === b.dataset.m)?.rec?.[b.dataset.id]; if (!r) return; confirmBox("Hapus pengeluaran?", `${r.cat} · ${rp(r.amt)} · ${fdate(r.date)}.${r.payable ? " Ini pembayaran invoice " + esc(r.to || "supplier") + ", jadi utangnya kembali terbuka." : ""} Hilang dari laporan dan laba-rugi; jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => { const pa = r.payable && S.payables.find(x => x.id === r.payable), pe = pa && Object.entries(pa.paid || {}).find(([, x]) => x.expId === b.dataset.id && !x.void);
+    await guard(async () => { if (pe) await voidPayment(pa, pe[0], pe[1]); else await S.db.doc("expenses/" + b.dataset.m).update({rec: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}}); }); }); },
   exportPnl: () => exportPnl(),
+  payDel: b => { const p = S.payables.find(x => x.id === b.dataset.id); if (!p) return; const pays = Object.entries(p.paid || {}).filter(([, x]) => !x.void);
+    confirmBox("Hapus invoice?", `${p.supplier || "-"} · ${p.inv || "tanpa nomor"} · ${rp(p.amt)}.${pays.length ? ` ${pays.length} pembayaran (${rp(paidOf(p))}) dan catatan pengeluarannya ikut dihapus.` : ""} Jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => {
+      const v = {void: true, voidBy: S.me, voidAt: Date.now()};
+      if (await guard(async () => { for (const [pid, x] of pays) await voidPayment(p, pid, x); await S.db.doc("payables/" + p.id).update(v); })) toast("Invoice dihapus."); }); },
+  payPaidDel: b => { const p = S.payables.find(x => x.id === b.dataset.id), x = p?.paid?.[b.dataset.k]; if (!x) return;
+    confirmBox("Hapus pembayaran?", `${p.supplier || "-"} · ${fdate(x.date)} · ${rp(x.amt)}. Utang kembali terbuka sebesar jumlah ini${x.expId ? " dan catatan pengeluarannya ikut dihapus" : ""}.`, "Hapus", async () => {
+      if (await guard(() => voidPayment(p, b.dataset.k, x))) toast("Pembayaran dihapus."); }); },
+  cashDel: b => { const c = cashEntries(S.ui.finMonth).find(x => x.id === b.dataset.id); if (!c) return;
+    confirmBox("Hapus data kas?", `${fdate(c.date)} shift ${c.shift || "-"}. Jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => {
+      if (await guard(() => mergeDoc("cash/" + c.date.slice(0, 7), {rec: {[c.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}}, {month: c.date.slice(0, 7)}))) { closeModal(); toast("Data kas dihapus."); } }); },
+  assetDel: b => { const a = S.assets.find(x => x.id === b.dataset.id); if (!a) return;
+    confirmBox("Hapus aset?", `${a.name} · ${rp(a.cost)}. Penyusutannya tidak dihitung lagi. Kalau aset dijual atau rusak, isi tanggal "Dijual / dibuang" saja.`, "Hapus", async () => {
+      if (await guard(() => S.db.doc("assets/" + a.id).update({void: true, voidBy: S.me, voidAt: Date.now()}))) { closeModal(); toast("Aset dihapus."); } }); },
   sop: b => modalSop(b.dataset.k),
   calib: () => modalCalib(),
   prep: b => modalPrep(b.dataset.id),
