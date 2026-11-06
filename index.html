@@ -2910,7 +2910,8 @@ const DEF_SHIFTS = [
   {k: "B1", n: "Bar shift 1", s: "06:30", e: "14:30"}, {k: "BM", n: "Bar middle", s: "14:00", e: "22:00"}, {k: "B2", n: "Bar shift 2", s: "16:00", e: "00:00"},
   {k: "K1", n: "Kitchen pagi", s: "08:30", e: "16:30"}, {k: "K2", n: "Kitchen malam", s: "16:00", e: "00:00"},
   {k: "R1", n: "Runner shift 1", s: "12:00", e: "20:00"}, {k: "R2", n: "Runner shift 2", s: "16:00", e: "00:00"}];
-const LEAVE = {L: ["Libur / off", 0], C: ["Cuti", 0], I: ["Izin disetujui", 0], SK: ["Sakit (disetujui)", 0], SX: ["Sakit tanpa izin", 1]};
+/* 6 Nov 2026: izin dua macam. I = izin dicover (berduka, musibah; tidak dipotong). IX = izin tidak dicover (dipotong per hari, bukan alpha). */
+const LEAVE = {L: ["Libur / off", 0], C: ["Cuti", 0], I: ["Izin dicover", 0], IX: ["Izin tidak dicover", 1], SK: ["Sakit (disetujui)", 0], SX: ["Sakit tanpa izin", 1]};
 const shiftDefs = () => (Array.isArray(S.settings.shifts) && S.settings.shifts.length ? S.settings.shifts : DEF_SHIFTS);
 const shiftDef = k => shiftDefs().find(x => x.k === k);
 const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 5;
@@ -2918,7 +2919,7 @@ const potMenitDefault = () => +S.settings.potMenit || 0;
 const lemburDefault = () => S.settings.lemburJam != null && S.settings.lemburJam !== "" ? +S.settings.lemburJam : 15000;
 const planOf = date => S.shifts.find(x => x.month === date.slice(0, 7))?.plan?.[date] || {};
 function shiftLabel(k) { if (LEAVE[k]) return LEAVE[k][0]; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
-function shCls(k) { if (!k) return "sh-x"; if (k === "SX") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
+function shCls(k) { if (!k) return "sh-x"; if (k === "SX" || k === "IX") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
 function weekStart(d) { const x = new Date(d + "T12:00:00"); const dw = (x.getDay() + 6) % 7; return addDays(d, -dw); }
 function myShiftChip() { const k = planOf(today())[S.me]; return k ? `<span class="chip ${LEAVE[k] ? "" : "acc"}">${esc(shiftLabel(k))}</span>` : ""; }
 function viewShift() {
@@ -2951,7 +2952,7 @@ async function copyWeek() {
 /* rekap absensi satu staf dalam sebulan, sesuai SOP: toleransi 5 menit/shift, akumulasi bulanan */
 function attStats(mo, sid) {
   const last = mo === today().slice(0, 7) ? today() : mo + "-" + pad(daysInMonth(mo)), tol = tolTelat();
-  const g = {jadwal: 0, masuk: 0, hadir: 0, alpha: 0, sakitTS: 0, izin: 0, cuti: 0, sakit: 0, libur: 0, tanpaJadwal: 0, jam: 0, telat: 0, telatMin: 0, telatHitung: 0, pulangCepat: 0, lupaOut: 0, days: []};
+  const g = {jadwal: 0, masuk: 0, hadir: 0, alpha: 0, sakitTS: 0, izinTC: 0, izin: 0, cuti: 0, sakit: 0, libur: 0, tanpaJadwal: 0, jam: 0, telat: 0, telatMin: 0, telatHitung: 0, pulangCepat: 0, lupaOut: 0, days: []};
   for (let d = 1; d <= daysInMonth(mo); d++) {
     const ds = mo + "-" + pad(d); if (ds > last) break;
     const lr = leaveReq(sid, ds), k = lr && lr.status === "disetujui" ? (lr.code || LEAVE_OF[lr.type]) : (planOf(ds)[sid] || ""), rec = S.attendance.find(a => a.date === ds)?.rec?.[sid], def = shiftDef(k);
@@ -2959,7 +2960,7 @@ function attStats(mo, sid) {
     if (rec?.in) { g.hadir++; if (rec.out) { row.jam = Math.max(0, (rec.out.ts - rec.in.ts) / 36e5); g.jam += row.jam; } else if (ds < today()) { g.lupaOut++; } }
     if (LEAVE[k]) {
       row.status = LEAVE[k][0];
-      if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++;
+      if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "IX") g.izinTC++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++;
       if (rec?.in) { g.tanpaJadwal++; row.status += " (tetap masuk)"; }
     } else if (!k || !def) {
       if (rec?.in) { g.tanpaJadwal++; row.status = isFlex(sid) ? "Hadir (jam fleksibel)" : "Masuk tanpa jadwal"; } else { if (!rec) continue; }
@@ -2996,7 +2997,7 @@ function payRows(mo) {
     const pm = sal.potTelat != null && sal.potTelat !== "" ? +sal.potTelat : potMenitDefault();
     const tunj = +sal.tunjangan || 0, lr = sal.lembur != null && sal.lembur !== "" ? +sal.lembur : lemburDefault();
     const sv = saved[id] || {}, kas = +sv.kasbon || 0, bon = +sv.bonus || 0, ljAuto = sv.lemburJam == null || sv.lemburJam === "", lj = ljAuto ? lemburApproved(mo, id) : +sv.lemburJam || 0, pl = +sv.potLain || 0, ket = sv.ket || "";
-    const potA = (a.alpha + a.sakitTS) * pa, potT = Math.round(a.telatHitung * pm), lemb = Math.round(lj * lr);
+    const potA = (a.alpha + a.sakitTS + a.izinTC) * pa, potT = Math.round(a.telatHitung * pm), lemb = Math.round(lj * lr);
     const gross = pk + tunj + lemb + bon, pot = potA + potT + kas + pl, net = gross - pot;
     return {id, ljAuto, name: s.name, role: s.role, div: sal.divisi || DIVISI[s.role] || "", via: sal.via || "", a, pk, pa, pm, tunj, lr, lj, lemb, kas, bon, pl, ket, potA, potT, gross, pot, net};
   });
@@ -3013,7 +3014,7 @@ function viewPayPeople(mo) {
       <td class="r num">${r.a.hadir}/${r.a.jadwal}${r.a.izin + r.a.cuti + r.a.sakit ? `<span class="sub">izin/cuti/sakit ${r.a.izin + r.a.cuti + r.a.sakit}</span>` : ""}</td>
       <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}${r.a.cekJadwal ? `<span class="sub" style="color:var(--warn)">${r.a.cekJadwal}× beda jadwal, cek tukar shift</span>` : ""}</td>
       <td class="r num">${r.a.telatMin ? `${r.a.telatMin} mnt<span class="sub">toleransi ${r.a.tolBulan} · dipotong ${r.a.telatHitung}</span>` : "0"}</td>
-      <td class="r num">${r.a.alpha + r.a.sakitTS ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}</span>` : "0"}</td>
+      <td class="r num">${r.a.alpha + r.a.sakitTS + r.a.izinTC ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}${r.a.izinTC ? " / " + r.a.izinTC : ""}</span>` : "0"}</td>
       <td><span class="chip ${r.a.sp[1]}">${r.a.sp[0]}</span></td>
       <td class="r num">${r.pk ? rp(r.pk + r.tunj) + (r.tunj ? `<span class="sub">tunj. ${rpk(r.tunj)}</span>` : "") : `<span class="chip warn">atur</span>`}</td><td class="r num">${rp(r.potA + r.potT)}${r.potA && r.potT ? `<span class="sub">absen ${rpk(r.potA)} · telat ${rpk(r.potT)}</span>` : ""}</td>
       <td class="r"><input class="cell-in num" type="number" min="0" step="0.5" value="${r.ljAuto ? (r.lj || "") : r.lj}" title="Otomatis dari lembur yang disetujui. Ubah untuk mengganti; kosongkan untuk kembali otomatis." data-pp="lemburJam" data-sid="${r.id}" aria-label="Jam lembur ${esc(r.name)}">${r.lemb ? `<span class="sub">${rpk(r.lemb)}${r.ljAuto ? " · dari pengajuan" : ""}</span>` : r.lj && !r.lr ? `<span class="sub" style="color:var(--warn)">tarif belum diatur</span>` : ""}</td>
@@ -3021,7 +3022,7 @@ function viewPayPeople(mo) {
       <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.kas || ""}" data-pp="kasbon" data-sid="${r.id}" aria-label="Kasbon ${esc(r.name)}"></td>
       <td class="r"><input class="cell-in num" type="number" min="0" step="1000" value="${r.pl || ""}" data-pp="potLain" data-sid="${r.id}" aria-label="Potongan lain ${esc(r.name)}"></td>
       <td class="r num"><b>${rp(r.net)}</b></td></tr>`).join("") || `<tr><td colspan="13" class="muted">Belum ada staf aktif.</td></tr>`}
-    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${fjam(tot2(rows, r => r.a.jam))}</td><td class="r num">${tot2(rows, r => r.a.telatHitung)} mnt</td><td class="r num">${tot2(rows, r => r.a.alpha + r.a.sakitTS)}</td><td></td><td class="r num">${rp(tot("pk") + tot("tunj"))}</td><td class="r num">${rp(tot("potA") + tot("potT"))}</td><td class="r num">${rpk(tot("lemb"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("pl"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
+    ${rows.length ? `<tr class="tot"><td><b>Total</b></td><td></td><td class="r num">${fjam(tot2(rows, r => r.a.jam))}</td><td class="r num">${tot2(rows, r => r.a.telatHitung)} mnt</td><td class="r num">${tot2(rows, r => r.a.alpha + r.a.sakitTS + r.a.izinTC)}</td><td></td><td class="r num">${rp(tot("pk") + tot("tunj"))}</td><td class="r num">${rp(tot("potA") + tot("potT"))}</td><td class="r num">${rpk(tot("lemb"))}</td><td class="r num">${rp(tot("bon"))}</td><td class="r num">${rp(tot("kas"))}</td><td class="r num">${rp(tot("pl"))}</td><td class="r num"><b>${rp(tot("net"))}</b></td></tr>` : ""}
     </tbody></table></div></section>`;
 }
 const tot2 = (rows, f) => rows.reduce((s, r) => s + f(r), 0);
@@ -3031,14 +3032,14 @@ function modalPayDetail(id) {
   openModal(`<div class="modal wide" role="dialog" aria-label="Rincian absensi"><div class="modal-h"><div><div class="eyebrow">${monthLabel(mo)} · ${ROLES[r.role]}</div><h2>${esc(r.name)}</h2></div><div class="row"><button class="btn sm" data-act="salEdit" data-id="${id}">Atur gaji</button><button class="btn sm" data-act="slipPdf" data-id="${id}">Unduh slip PDF</button>${canEditAtt() ? `<button class="btn sm" data-act="attEdit" data-sid="${id}">Tambah absen manual</button>` : ""}<button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
     <div class="grid3"><div class="kpi"><span class="eyebrow">Hadir / shift</span><span class="v">${a.hadir}/${a.jadwal}</span><span class="small muted">jam kerja ${fjam(a.jam)}</span></div>
       <div class="kpi"><span class="eyebrow">Telat</span><span class="v">${a.telatMin} mnt</span><span class="small muted">toleransi ${a.tolBulan} mnt (${a.masuk} shift × ${tolTelat()}) · dipotong ${a.telatHitung} mnt</span></div>
-      <div class="kpi"><span class="eyebrow">Alpha · sakit tanpa izin</span><span class="v">${a.alpha} · ${a.sakitTS}</span><span class="small muted">izin ${a.izin} · cuti ${a.cuti} · sakit ${a.sakit}</span></div>
+      <div class="kpi"><span class="eyebrow">Alpha · sakit tanpa izin · izin tak dicover</span><span class="v">${a.alpha} · ${a.sakitTS} · ${a.izinTC}</span><span class="small muted">izin dicover ${a.izin} · cuti ${a.cuti} · sakit ${a.sakit}</span></div>
       <div class="kpi"><span class="eyebrow">Status SOP</span><span class="v"><span class="chip ${a.sp[1]}">${a.sp[0]}</span></span><span class="small muted">pulang cepat ${a.pulangCepat} mnt</span></div></div>
     <div class="list">
       <div class="li"><span class="grow">Gaji pokok</span><span class="num">${rp(r.pk)}</span></div>
       ${r.tunj ? `<div class="li"><span class="grow">(+) Tunjangan tetap</span><span class="num">${rp(r.tunj)}</span></div>` : ""}
       <div class="li"><span class="grow">(+) Lembur<span class="sub small muted">${r.lj} jam × ${rp(r.lr)}</span></span><span class="num">${rp(r.lemb)}</span></div>
       <div class="li"><span class="grow">(+) Bonus / insentif</span><span class="num">${rp(r.bon)}</span></div>
-      <div class="li"><span class="grow">(−) Alpha & sakit tanpa izin<span class="sub small muted">${a.alpha + a.sakitTS} hari × ${rp(r.pa)}</span></span><span class="num">${rp(r.potA)}</span></div>
+      <div class="li"><span class="grow">(−) Alpha, sakit tanpa izin & izin tidak dicover<span class="sub small muted">${a.alpha + a.sakitTS + a.izinTC} hari × ${rp(r.pa)}</span></span><span class="num">${rp(r.potA)}</span></div>
       <div class="li"><span class="grow">(−) Keterlambatan<span class="sub small muted">(${a.telatMin} − toleransi ${a.tolBulan}) = ${a.telatHitung} menit × ${rp(r.pm)}</span></span><span class="num">${rp(r.potT)}</span></div>
       <div class="li"><span class="grow">(−) Kasbon</span><span class="num">${rp(r.kas)}</span></div>
       <div class="li"><span class="grow">(−) Potongan lain</span><span class="num">${rp(r.pl)}</span></div>
@@ -3054,7 +3055,7 @@ async function setPayPerson(sid, k, v) {
 }
 async function savePayPeople() {
   const mo = S.ui.finMonth, rows = payRows(mo), sum = f => rows.reduce((s, r) => s + f(r), 0);
-  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, alpha: r.a.alpha, sakitTS: r.a.sakitTS, izin: r.a.izin, cuti: r.a.cuti, sakit: r.a.sakit, jam: +r.a.jam.toFixed(2), telat: r.a.telat, telatMin: r.a.telatMin, telatHitung: r.a.telatHitung, sp: r.a.sp[0], pokok: r.pk, tunjangan: r.tunj, lemburJam: r.lj, lembur: r.lemb, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, potLain: r.pl, ket: r.ket, bersih: r.net});
+  const people = {}; rows.forEach(r => people[r.id] = {name: r.name, jadwal: r.a.jadwal, hadir: r.a.hadir, alpha: r.a.alpha, sakitTS: r.a.sakitTS, izinTC: r.a.izinTC, izin: r.a.izin, cuti: r.a.cuti, sakit: r.a.sakit, jam: +r.a.jam.toFixed(2), telat: r.a.telat, telatMin: r.a.telatMin, telatHitung: r.a.telatHitung, sp: r.a.sp[0], pokok: r.pk, tunjangan: r.tunj, lemburJam: r.lj, lembur: r.lemb, potAbsen: r.potA, potTelat: r.potT, kasbon: r.kas, bonus: r.bon, potLain: r.pl, ket: r.ket, bersih: r.net});
   const d = {month: mo, n: rows.length, pokok: sum(r => r.pk), tunjangan: sum(r => r.tunj), lembur: sum(r => r.lemb), potLain: sum(r => r.pl), kasbon: sum(r => r.kas), potAbsen: sum(r => r.potA), potTelat: sum(r => r.potT), bonus: sum(r => r.bon), bersih: sum(r => r.net), people, src: "per orang", by: S.me, ts: Date.now()};
   if (await guard(() => mergeDoc("payroll/" + mo, d, {}))) toast("Gaji " + monthLabel(mo) + " tersimpan: " + rp(d.bersih) + ". Beban gaji di laba-rugi ikut diperbarui.");
 }
@@ -3101,8 +3102,8 @@ async function payPdf() {
   const sum = f => rows.reduce((s, r) => s + f(r), 0);
   doc.autoTable({startY: 41, styles: {fontSize: 6.2, cellPadding: 1.2}, margin: {left: 8, right: 8}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, alternateRowStyles: {fillColor: [244, 247, 250]},
     head: [["Nama", "Peran", "Hadir/Shift", "Jam kerja", "Telat (x)", "Telat total", "Toleransi", "Telat dipotong", "Alpha", "Sakit TS", "Izin/Cuti/Sakit", "Status SOP", "Pokok+tunj.", "Lembur", "Bonus", "Pot. absen", "Pot. telat", "Kasbon", "Pot. lain", "Gaji bersih"]],
-    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.tolBulan + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk + r.tunj), pdfRp(r.lemb), pdfRp(r.bon), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.pl), pdfRp(r.net)]),
-    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", "", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS), "", "", pdfRp(sum(r => r.pk + r.tunj)), pdfRp(sum(r => r.lemb)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.pl)), pdfRp(sum(r => r.net))]],
+    body: rows.map(r => [r.name, ROLES[r.role], r.a.hadir + "/" + r.a.jadwal, fjam(r.a.jam), r.a.telat, r.a.telatMin + " mnt", r.a.tolBulan + " mnt", r.a.telatHitung + " mnt", r.a.alpha, r.a.sakitTS + r.a.izinTC, (r.a.izin + r.a.cuti + r.a.sakit), r.a.sp[0], pdfRp(r.pk + r.tunj), pdfRp(r.lemb), pdfRp(r.bon), pdfRp(r.potA), pdfRp(r.potT), pdfRp(r.kas), pdfRp(r.pl), pdfRp(r.net)]),
+    foot: [["TOTAL", "", "", fjam(sum(r => r.a.jam)), sum(r => r.a.telat), sum(r => r.a.telatMin) + " mnt", "", sum(r => r.a.telatHitung) + " mnt", sum(r => r.a.alpha), sum(r => r.a.sakitTS + r.a.izinTC), "", "", pdfRp(sum(r => r.pk + r.tunj)), pdfRp(sum(r => r.lemb)), pdfRp(sum(r => r.bon)), pdfRp(sum(r => r.potA)), pdfRp(sum(r => r.potT)), pdfRp(sum(r => r.kas)), pdfRp(sum(r => r.pl)), pdfRp(sum(r => r.net))]],
     footStyles: {fillColor: [255, 245, 138], textColor: 30, fontStyle: "bold"},
     columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19].map(c => [c, c === 19 ? {halign: "right", fontStyle: "bold"} : {halign: "right"}]))});
   let y = doc.lastAutoTable.finalY + 8; const P = pnl(mo);
@@ -3160,7 +3161,7 @@ async function slipPdf(onlyId) {
     // kehadiran
     const yB = Math.max(ya1, ya2) + 4;
     const yb1 = tbl(yB, ["KEHADIRAN (absensi ROUNA OS)", ""], [["Shift Dijadwalkan", n0(a.jadwal)], ["Total Shift Masuk", n0(a.masuk)], ["Total Jam Kerja", fjam(a.jam)], ["Masuk di luar jadwal", n0(a.tanpaJadwal)]], {w: half, split: 0.62});
-    const yb2 = tbl(yB, ["TIDAK MASUK", ""], [["Alpha (tanpa keterangan)", hr(a.alpha)], ["Sakit tanpa izin", hr(a.sakitTS)], ["Sakit (disetujui)", hr(a.sakit)], ["Izin / Cuti", n0(a.izin) + " / " + n0(a.cuti) + " hari"]], {x: L + half + 4, w: half, split: 0.62});
+    const yb2 = tbl(yB, ["TIDAK MASUK", ""], [["Alpha (tanpa keterangan)", hr(a.alpha)], ["Sakit tanpa izin", hr(a.sakitTS)], ["Izin tidak dicover", hr(a.izinTC)], ["Sakit (disetujui)", hr(a.sakit)], ["Izin dicover / Cuti", n0(a.izin) + " / " + n0(a.cuti) + " hari"]], {x: L + half + 4, w: half, split: 0.62});
     y = Math.max(yb1, yb2);
     // pendapatan & potongan berdampingan
     const y0 = y + 4;
@@ -3172,7 +3173,7 @@ async function slipPdf(onlyId) {
     doc.text("GAJI BERSIH", L + 3, y + 6.6); doc.setFontSize(13); doc.text(pdfRp(r.net), R - 3, y + 6.8, {align: "right"});
     y += 10; doc.rect(L, y, CW, 7); doc.setFont("helvetica", "italic"); doc.setFontSize(8.2); doc.text("Terbilang: " + (r.net < 0 ? "minus " : "") + terbilang(r.net), L + 3, y + 4.7);
     y += 11; doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(70);
-    const notes = [`Cara hitung: Gaji bersih = Total pendapatan - Total potongan. Telat dihitung = telat total ${a.telatMin} - toleransi ${a.tolBulan} = ${a.telatHitung} menit (tidak kurang dari 0), dipotong Rp ${n0(r.pm)}/menit. Potongan absensi = (alpha + sakit tanpa izin) ${a.alpha + a.sakitTS} hari x Rp ${n0(r.pa)}. Uang lembur = ${n0(r.lj)} jam x Rp ${n0(r.lr)}.`];
+    const notes = [`Cara hitung: Gaji bersih = Total pendapatan - Total potongan. Telat dihitung = telat total ${a.telatMin} - toleransi ${a.tolBulan} = ${a.telatHitung} menit (tidak kurang dari 0), dipotong Rp ${n0(r.pm)}/menit. Potongan absensi = (alpha + sakit tanpa izin + izin tidak dicover) ${a.alpha + a.sakitTS + a.izinTC} hari x Rp ${n0(r.pa)}. Uang lembur = ${n0(r.lj)} jam x Rp ${n0(r.lr)}.`];
     if (r.ket) notes.push("Catatan: " + r.ket);
     if (a.cekJadwal) notes.push(`Ada ${a.cekJadwal}x masuk jauh dari jadwal (kemungkinan tukar shift tanpa pengajuan); tidak dipotong telat. Perbaiki di Jadwal bila perlu.`);
     if (a.lupaOut) notes.push(`Ada ${a.lupaOut}x lupa check-out; jam kerja hari tersebut tidak dihitung.`);
@@ -4061,6 +4062,7 @@ function reqRow(r, mode) {
   const kor = r.type === "koreksi" && r.status === "menunggu" ? (() => { const a = attRec(r.sid, r.from), pl = planOf(r.from)[r.sid]; return `<span class="sub small">Tercatat sekarang: masuk ${a?.in ? ftime(a.in.ts) : "–"}, pulang ${a?.out ? ftime(a.out.ts) : "–"}${pl ? " · jadwal " + esc(pl) : ""}</span>`; })() : "";
   let btn = "";
   if (mode === "approve" && r.type === "koreksi" && !canEditAtt()) btn = `<span class="small muted">Disetujui Owner/Finance</span>`;
+  else if (mode === "approve" && r.type === "izin") btn = `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1" data-code="I" title="Berduka, musibah: tidak dipotong">Setujui · dicover</button><button class="btn sm" data-act="hrDecide" data-id="${r.id}" data-ok="1" data-code="IX" title="Dipotong per hari">Setujui · tidak dicover</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`;
   else if (mode === "approve") btn = r.type === "sakit" ? `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1" data-code="SK">Setujui</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`
     : `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1">Setujui</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`;
   else if (mode === "partner") btn = `<button class="btn sm pri" data-act="hrPartner" data-id="${r.id}" data-ok="1">Terima</button><button class="btn sm ghost" data-act="hrPartner" data-id="${r.id}" data-ok="0">Tolak</button>`;
@@ -4089,7 +4091,7 @@ function modalReq(k) {
   const t = today();
   if (k === "leave") { const c = myCuti();
     return openModal(`<form data-submit="hrReq" data-k="leave" class="modal" role="dialog" aria-label="Pengajuan cuti, izin, sakit"><div class="modal-h"><h2>Cuti, izin, atau sakit</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-      <div class="fgrid two"><label class="f" style="grid-column:1/-1">Jenis<select name="type"><option value="izin">Izin (keperluan mendesak)</option><option value="sakit">Sakit</option><option value="cuti" ${c.q - c.u > 0 ? "" : "disabled"}>Cuti tahunan · sisa ${Math.max(0, c.q - c.u)} hari</option></select></label>
+      <div class="fgrid two"><label class="f" style="grid-column:1/-1">Jenis<select name="type"><option value="izin">Izin (berduka/musibah dicover, lainnya dipotong)</option><option value="sakit">Sakit</option><option value="cuti" ${c.q - c.u > 0 ? "" : "disabled"}>Cuti tahunan · sisa ${Math.max(0, c.q - c.u)} hari</option></select></label>
       <label class="f">Dari<input type="date" name="from" value="${t}" required></label><label class="f">Sampai<input type="date" name="to" value="${t}" required></label>
       <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required placeholder="mis. acara keluarga, demam"></label></div>
       <div id="sk-box" hidden>${picField("sk", "Foto surat dokter")}<p class="small muted" style="margin:4px 0 0">Sakit dan izin yang disetujui tidak dipotong dan tidak dihitung alpha. Lampirkan surat dokter bila ada.</p></div>
@@ -4326,7 +4328,7 @@ function laborDaily(mo) {
   const people = activeStaff().map(([id]) => { const s = salaryOf(id); return {id, day: ((+s.pokok || 0) + (+s.tunjangan || 0)) / 26, lr: s.lembur != null && s.lembur !== "" ? +s.lembur : lemburDefault()}; });
   for (let d = 1; d <= daysInMonth(mo); d++) { const ds = mo + "-" + pad(d); if (ds > last) break;
     const plan = planOf(ds); let cost = 0, n = 0;
-    people.forEach(p => { const k = plan[p.id]; if (k && (!LEAVE[k] || k === "C" || k === "SK")) { cost += p.day; if (!LEAVE[k]) n++; } });
+    people.forEach(p => { const k = plan[p.id]; if (k && (!LEAVE[k] || k === "C" || k === "SK" || k === "I")) { cost += p.day; if (!LEAVE[k]) n++; } });
     allReqs().filter(r => r.type === "lembur" && r.status === "disetujui" && r.from === ds).forEach(r => { const p = people.find(x => x.id === r.sid); if (p) cost += (+r.hours || 0) * p.lr; });
     out.push({date: ds, cost: Math.round(cost), n, rev: revenueOn(ds)}); }
   return out;
