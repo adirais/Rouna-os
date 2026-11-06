@@ -2447,7 +2447,7 @@ function viewMenuDetail(id) {
     ${cost ? `<tr><td><b>Total HPP</b></td><td></td><td></td><td class="r num"><b>${rp(m.hpp)}</b></td><td></td></tr>` : ""}</tbody></table></div></section>`;
 }
 function viewPreps() {
-  const pl = prepItems(), cost = canCost(), canProd = ["manager", "headbar", "kitchen"].includes(role());
+  const pl = prepItems(), cost = canCost(), canProd = ["manager", "headbar", "kitchen", "crew"].includes(role());
   if (!pl.length) return `<div class="empty"><b>Belum ada bahan olahan</b><span>Simple syrup, cold brew, saus, bumbu dasar, dan bahan lain yang dibuat sendiri. HPP-nya dihitung dari bahan penyusun dan ikut masuk ke HPP menu.</span></div>`;
   const g = {}; pl.forEach(i => (g[AREAS[i.area] || "Lainnya"] ||= []).push(i));
   return `<p class="small muted" style="margin:0">Dibuat per batch dari bahan baku. Catat lewat <b>Produksi</b> supaya bahan mentah berkurang dan stok olahan bertambah.</p>` +
@@ -3593,7 +3593,7 @@ function crewHome() {
   const mineMoves = S.moves.filter(m => m.date === t).flatMap(m => Object.values(m.list || {})).filter(e => e.by === S.me).sort((a, b) => b.ts - a.ts).slice(0, 6);
   const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length;
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
-  <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("move", "inArea", "in", "Masuk area")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}</div>
+  <div class="qa">${qa("move", "take", "out", "Ambil barang")}${qa("move", "inArea", "in", "Masuk area")}${qa("waste", "", "waste", "Waste")}${qa("closing", "", "closing", "Closing")}${prepItems().length ? qa("prod", "", "in", "Produksi batch") : ""}</div>
   ${installCard()}
   ${ur ? `<div class="alert acc"><div class="grow"><b>${ur} SOP</b> belum kamu baca</div><button class="btn sm" data-act="goDocs">Baca</button></div>` : ""}
   ${hrNotes().join("")}
