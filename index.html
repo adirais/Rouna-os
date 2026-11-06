@@ -4076,8 +4076,8 @@ function viewRequests() {
   const hist = isHrApprover() ? R.filter(r => !["menunggu", "menunggu_rekan"].includes(r.status) && r.from.startsWith(mo)) : [];
   const months = [...new Set([today().slice(0, 7), ...R.map(r => r.from.slice(0, 7))])].sort().reverse();
   return `<section class="panel"><div class="panel-h"><div><h2>Ajukan</h2><span class="small muted">Sisa cuti ${today().slice(0, 4)}: <b>${Math.max(0, c.q - c.u)}</b> dari ${c.q} hari${c.q === 0 ? " · cuti tahunan berlaku setelah 1 tahun kerja" : ""}</span></div></div>
-    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="ganti">Ganti jam shift</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button><button class="btn" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
-    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Tukar shift dan ganti jam shift boleh untuk hari ini. Lembur yang disetujui masuk ke tabel gaji. Koreksi absen (lupa check-out, gagal absen) disetujui Owner atau Finance lalu jamnya langsung tercatat. Penyetuju lain: Manager, Headbar.</p></section>
+    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="ganti">Tukar jam (hari ini)</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button><button class="btn" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
+    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Tukar jam dengan rekan boleh untuk hari ini. Lembur yang disetujui masuk ke tabel gaji. Koreksi absen (lupa check-out, gagal absen) disetujui Owner atau Finance lalu jamnya langsung tercatat. Penyetuju lain: Manager, Headbar.</p></section>
   ${forMe.length ? `<section class="panel"><h2>Permintaan tukar shift untukmu</h2><div class="list">${forMe.map(r => reqRow(r, "partner")).join("")}</div></section>` : ""}
   ${isHrApprover() ? `<section class="panel"><div class="panel-h"><h2>Menunggu persetujuan</h2><span class="chip ${wait.length ? "warn" : "ok"}">${wait.length}</span></div>${wait.length ? `<div class="list">${wait.map(r => reqRow(r, "approve")).join("")}</div>` : `<div class="small muted">Tidak ada pengajuan yang menunggu.</div>`}
     ${R.some(r => r.status === "menunggu_rekan") ? `<div class="small muted">${R.filter(r => r.status === "menunggu_rekan").length} tukar shift masih menunggu jawaban rekan.</div>` : ""}</section>` : ""}
@@ -4103,15 +4103,15 @@ function modalReq(k) {
       <div id="swap-prev" class="small muted"></div>
       <p class="small muted" style="margin:0">Rekan harus menerima dulu, lalu penyetuju menyetujui. Setelah disetujui, jadwal kalian di tanggal itu ditukar.</p>
       <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim ke rekan</button></div></form>`); }
-  if (k === "ganti") { const cur = planOf(t)[S.me] || "";
-    return openModal(`<form data-submit="hrReq" data-k="ganti" class="modal" role="dialog" aria-label="Ganti jam shift"><div class="modal-h"><h2>Ganti jam shift</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-      <p class="small muted" style="margin:0">Untuk pindah jam kerjamu sendiri, termasuk hari ini (mis. dari Bar shift 1 ke Bar middle). Kalau bertukar dengan rekan, pakai Tukar shift.</p>
+  if (k === "ganti") { const sh = c => shiftDef(c) ? ` ${shiftDef(c).s}–${shiftDef(c).e}` : "";
+    /* 6 Nov 2026: tukar jam shift dengan rekan di hari yang sama (dikirim ke rekan, lalu disetujui) */
+    return openModal(`<form data-submit="hrReq" data-k="swap" data-mode="jam" class="modal" role="dialog" aria-label="Tukar jam shift"><div class="modal-h"><h2>Tukar jam shift</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+      <p class="small muted" style="margin:0">Bertukar jam kerja dengan rekan di hari yang sama, termasuk hari ini. Rekan menerima dulu, lalu penyetuju menyetujui.</p>
       <div class="fgrid two"><label class="f">Tanggal<input type="date" name="from" value="${t}" min="${t}" required></label>
-      <label class="f">Jam shift baru<select name="code" required><option value="">Pilih shift</option>${shiftDefs().map(x => `<option value="${esc(x.k)}">${esc(x.k)} · ${esc(x.n)} ${x.s}–${x.e}</option>`).join("")}</select></label>
-      <div id="ganti-now" class="small muted" style="grid-column:1/-1">Jadwal sekarang: <b>${esc(cur || "–")}</b>${shiftDef(cur) ? " " + shiftDef(cur).s + "–" + shiftDef(cur).e : ""}</div>
-      <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required placeholder="mis. diminta manager, ada keperluan pagi"></label></div>
-      <p class="small muted" style="margin:0">Setelah disetujui Owner/Manager/Headbar/Finance, jadwal langsung berubah dan telat dihitung dari jam baru.</p>
-      <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim pengajuan</button></div></form>`); }
+      <label class="f">Tukar dengan<select name="partner" required>${jamOpts(t)}</select></label><input type="hidden" name="date2" value="">
+      <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required placeholder="mis. ada keperluan pagi"></label></div>
+      <div id="swap-prev" class="small"></div>
+      <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim ke rekan</button></div></form>`); }
   if (k === "koreksi") { const y = new Date().getHours() < 12 ? addDays(t, -1) : t;
     return openModal(`<form data-submit="hrReq" data-k="koreksi" class="modal" role="dialog" aria-label="Koreksi absen"><div class="modal-h"><h2>Koreksi absen</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
       <p class="small muted" style="margin:0">Untuk lupa check-out, atau gagal absen padahal sudah di outlet. Isi jam yang sebenarnya; kosongkan yang sudah benar.</p>
@@ -4134,8 +4134,15 @@ function korNow() {
 }
 document.addEventListener("change", e => { if (e.target.closest && e.target.closest("form[data-k=koreksi]") && e.target.name === "from") korNow();
   if (e.target.closest && e.target.closest("form[data-k=ganti]") && e.target.name === "from") { const c = planOf(e.target.value)[S.me] || "", el = $("#ganti-now"); if (el) el.innerHTML = `Jadwal sekarang: <b>${esc(c || "–")}</b>${shiftDef(c) ? " " + shiftDef(c).s + "–" + shiftDef(c).e : ""}`; } });
+function jamOpts(d, sel) {
+  const sh = c => shiftDef(c) ? ` ${shiftDef(c).s}–${shiftDef(c).e}` : "", pl = planOf(d);
+  return `<option value="">Pilih rekan</option>` + activeStaff().filter(([id]) => id !== S.me).map(([id, x]) => [id, x, pl[id] || ""]).sort((a, b) => (shiftDef(b[2]) ? 1 : 0) - (shiftDef(a[2]) ? 1 : 0))
+    .map(([id, x, c]) => `<option value="${id}" ${id === sel ? "selected" : ""}>${esc(x.name.split(" ")[0])} · ${esc(c || "–")}${sh(c)}</option>`).join("");
+}
 function swapPrevUpdate(f) {
   const el = $("#swap-prev"); if (!el) return; const p = f.partner.value, ds = [f.from.value, f.date2.value].filter(Boolean);
+  if (f.dataset.mode === "jam") { const d = f.from.value, a = planOf(d)[S.me] || "", b = p ? planOf(d)[p] || "" : "", sh = c => shiftDef(c) ? ` ${shiftDef(c).s}–${shiftDef(c).e}` : "";
+    el.innerHTML = `Jadwalmu ${d ? fdate(d) : ""}: <b>${esc(a || "–")}</b>${sh(a)}` + (p ? `<br>Setelah disetujui: kamu <b>${esc(b || "libur")}</b>${sh(b)}, ${esc(sName(p).split(" ")[0])} <b>${esc(a || "libur")}</b>${sh(a)}` : ""); return; }
   el.innerHTML = p && ds.length ? "Jadwal sekarang: " + ds.map(d => `${fdate(d)} kamu <b>${esc(planOf(d)[S.me] || "–")}</b>, ${esc(sName(p).split(" ")[0])} <b>${esc(planOf(d)[p] || "–")}</b>`).join(" · ") : "";
 }
 async function submitHrReq(f) {
@@ -4357,6 +4364,7 @@ document.addEventListener("change", e => {
   const el = e.target;
   if (el.dataset?.train) guard(() => mergeDoc("docs/" + el.dataset.train, {train: el.checked}, {}));
   const f = el.closest?.("form[data-submit=hrReq]");
+  if (f && f.dataset.mode === "jam" && el.name === "from") { const v = f.partner.value; f.partner.innerHTML = jamOpts(el.value, v); }
   if (f && f.dataset.k === "swap") swapPrevUpdate(f);
   if (f && f.dataset.k === "leave" && el.name === "type") { const box = $("#sk-box"); if (box) box.hidden = el.value !== "sakit"; }
   if (f && f.dataset.k === "leave" && el.name === "from" && f.to.value < el.value) f.to.value = el.value;
