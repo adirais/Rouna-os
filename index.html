@@ -460,13 +460,15 @@ async function logMoves(entries) {
   entries.forEach(e => list[uid()] = Object.assign({ts: Date.now(), by: S.me}, e));
   await mergeDoc("moves/" + date, {list}, {date});
 }
-async function setStock(id, patch) {
-  const cur = stockOf(id);
-  const next = {gudang: +(cur.gudang || 0), area: +(cur.area || 0), ...patch, updatedAt: Date.now(), by: S.me};
-  next.gudang = Math.round(next.gudang * 1000) / 1000; next.area = Math.round(next.area * 1000) / 1000;
-  S.stock[id] = next;
-  await S.db.doc("stock/" + id).set(next);
+/* 6 Nov 2026: stok diubah atomik di server (stock_apply). addStock = tambah/kurang, setStock = angka pasti (opname/closing).
+   Mencegah HP yang datanya basi atau dua orang yang menyimpan bersamaan saling menimpa stok. */
+async function stockApply(id, o) {
+  const {data, error} = await SB.rpc("stock_apply", {p_id: id, p_dg: +o.dg || 0, p_da: +o.da || 0, p_gudang: o.gudang ?? null, p_area: o.area ?? null});
+  if (error) throw dbError(error);
+  if (data) S.stock[id] = data; S.db.bump("stock");
 }
+const addStock = (id, dg, da) => stockApply(id, {dg, da});
+const setStock = (id, patch) => stockApply(id, {gudang: patch.gudang, area: patch.area});
 function subscribe(q, key, mapFn) {
   q.onSnapshot(snap => { mapFn(snap); S.ready[key] = true; scheduleRender(); },
     e => { console.warn(key, e); S.ready[key] = true; scheduleRender(); });
@@ -921,10 +923,10 @@ async function submitMove(form) {
     const log = [];
     for (const l of lines) {
       const s = stockOf(l.itemId);
-      if (k === "in") { await setStock(l.itemId, {gudang: (s.gudang || 0) + l.qty}); if (l.price > 0) { await logPrice(l.itemId, l.price, "barang masuk" + (note ? " · " + note : "")); await S.db.doc("items/" + l.itemId).update({cost: l.price}); } log.push({t: "in", itemId: l.itemId, qty: l.qty, note, price: l.price || +S.items[l.itemId].cost || 0}); }
-      if (k === "inArea") { await setStock(l.itemId, {area: (s.area || 0) + l.qty}); log.push({t: "inArea", itemId: l.itemId, qty: l.qty, note}); }
-      if (k === "take") { await setStock(l.itemId, {gudang: s.gudang - l.qty, area: (s.area || 0) + l.qty}); log.push({t: "take", itemId: l.itemId, qty: l.qty, note}); }
-      if (k === "ret") { await setStock(l.itemId, {gudang: (s.gudang || 0) + l.qty, area: s.area - l.qty}); log.push({t: "ret", itemId: l.itemId, qty: l.qty, note}); }
+      if (k === "in") { await addStock(l.itemId, l.qty, 0); if (l.price > 0) { await logPrice(l.itemId, l.price, "barang masuk" + (note ? " · " + note : "")); await S.db.doc("items/" + l.itemId).update({cost: l.price}); } log.push({t: "in", itemId: l.itemId, qty: l.qty, note, price: l.price || +S.items[l.itemId].cost || 0}); }
+      if (k === "inArea") { await addStock(l.itemId, 0, l.qty); log.push({t: "inArea", itemId: l.itemId, qty: l.qty, note}); }
+      if (k === "take") { await addStock(l.itemId, -l.qty, l.qty); log.push({t: "take", itemId: l.itemId, qty: l.qty, note}); }
+      if (k === "ret") { await addStock(l.itemId, l.qty, -l.qty); log.push({t: "ret", itemId: l.itemId, qty: l.qty, note}); }
       if (k === "opname") { const diff = l.qty - (s.gudang || 0); await setStock(l.itemId, {gudang: l.qty}); log.push({t: "opname", itemId: l.itemId, qty: diff, note: (note ? note + " · " : "") + "fisik " + fq(l.qty)}); }
     }
     await logMoves(log);
@@ -1006,7 +1008,7 @@ async function submitRecv(form) {
     const log = [];
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i]; if (!S.items[l.itemId]) continue;
-      if (l.recvQty > 0) { await setStock(l.itemId, {gudang: (stockOf(l.itemId).gudang || 0) + l.recvQty}); log.push({t: "order", itemId: l.itemId, qty: l.recvQty, note: o.supplier || "order", price: l.price}); }
+      if (l.recvQty > 0) { await addStock(l.itemId, l.recvQty, 0); log.push({t: "order", itemId: l.itemId, qty: l.recvQty, note: o.supplier || "order", price: l.price}); }
       const p = num(form["p" + i].value); if (p > 0 && p !== +S.items[l.itemId].cost) { await logPrice(l.itemId, p, "order" + (o.supplier ? " · " + o.supplier : "")); await S.db.doc("items/" + l.itemId).update({cost: p}); }
     }
     const invUrl = await upDocPic("inv"), invNo = (form.invno?.value || "").trim();
@@ -1090,7 +1092,9 @@ async function submitClosing(form) {
   const ok = await guard(async () => {
     const cd = form.dataset.d || bizDay();
     await mergeDoc("closings/" + cd, {shifts: {[a]: {by: S.me, ts: Date.now(), lines, note: form.note.value.trim()}}}, {date: cd});
-    for (const i of items) if (lines[i.id].sisa !== (+stockOf(i.id).area || 0)) await setStock(i.id, {area: lines[i.id].sisa});
+    const setA = {}; for (const i of items) setA[i.id] = lines[i.id].sisa;
+    const {error: se} = await SB.rpc("stock_set_area_many", {p: setA}); if (se) throw dbError(se);
+    items.forEach(i => S.stock[i.id] = {...stockOf(i.id), area: lines[i.id].sisa}); S.db.bump("stock");
     await logMoves(spoilLog);
   });
   if (ok) { lsSet(draftKey(form), null); closeModal(); toast("Closing " + AREAS[a] + " tersimpan."); } else { btn.disabled = false; btn.textContent = "Kirim laporan closing"; }
@@ -1796,8 +1800,8 @@ async function submitProd(form) {
   const note = form.note.value.trim(), exp = +p.it.prep.shelf ? addDays(today(), +p.it.prep.shelf) : "";
   const ok = await guard(async () => {
     const log = [];
-    for (const l of p.need) { const s = stockOf(l.itemId); await setStock(l.itemId, {[p.src]: (+s[p.src] || 0) - l.need}); log.push({t: "prodUse", itemId: l.itemId, qty: -l.need, src: p.src, note: "untuk " + p.it.name}); }
-    const so = stockOf(p.it.id); await setStock(p.it.id, {area: (+so.area || 0) + p.out});
+    for (const l of p.need) { await addStock(l.itemId, p.src === "gudang" ? -l.need : 0, p.src === "area" ? -l.need : 0); log.push({t: "prodUse", itemId: l.itemId, qty: -l.need, src: p.src, note: "untuk " + p.it.name}); }
+    await addStock(p.it.id, 0, p.out);
     log.push({t: "prod", itemId: p.it.id, qty: p.out, note: [fq(p.n) + " batch", exp ? "pakai sebelum " + fdate(exp) : "", note].filter(Boolean).join(" · "), exp});
     await logMoves(log);
   });
@@ -2179,7 +2183,7 @@ async function submitWaste(form) {
   const btn = form.querySelector("[type=submit]"); btn.disabled = true;
   const ph = await picUpload(), s = stockOf(id), reason = form.reason.value, note = form.note.value.trim();
   const ok = await guard(async () => {
-    await setStock(id, {area: Math.max(0, (+s.area || 0) - qty)});
+    await addStock(id, 0, -Math.min(qty, Math.max(0, +s.area || 0)));
     const e = {t: "waste", itemId: id, qty, reason, area: it.area, note: reason + (note ? " · " + note : "")}; if (ph) e.photo = ph;
     await logMoves([e]);
   });
@@ -2928,7 +2932,10 @@ function attStats(mo, sid) {
       g.jadwal++; g.masuk++;
       if (isFlex(sid)) { g.flex = true; row.status = "Hadir (jam fleksibel)" + (!rec.out && ds < today() ? " · lupa check-out" : ""); g.days.push(row); continue; }
       const st = new Date(ds + "T" + def.s + ":00").getTime(); let en = new Date(ds + "T" + def.e + ":00").getTime(); if (en <= st) en += 864e5;
-      row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4)); g.telatMin += row.late; if (row.late > tol) g.telat++;
+      row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4));
+      /* 6 Nov 2026: masuk >3 jam dari jadwal hampir pasti tukar shift yang belum dicatat. Tidak dipotong; ditandai untuk dicek. */
+      if (row.late > 180 || (st - rec.in.ts) / 6e4 > 180) { g.cekJadwal = (g.cekJadwal || 0) + 1; row.late = 0; row.status = `Masuk ${ftime(rec.in.ts)}, jauh dari jadwal ${def.s}. Cek tukar shift (tidak dipotong)`; if (!rec.out && ds < today()) row.status += " · lupa check-out"; g.days.push(row); continue; }
+      g.telatMin += row.late; if (row.late > tol) g.telat++;
       if (rec.out) { row.early = Math.max(0, Math.round((en - rec.out.ts) / 6e4)); if (row.early > 0) g.pulangCepat += row.early; }
       row.status = row.late > tol ? `Telat ${row.late} mnt` : "Tepat waktu"; if (!rec.out && ds < today()) row.status += " · lupa check-out";
     }
@@ -2965,7 +2972,7 @@ function viewPayPeople(mo) {
     <div class="tbl-wrap"><table class="pay-tbl"><thead><tr><th>Nama</th><th class="r">Hadir/shift</th><th class="r">Jam kerja</th><th class="r">Telat</th><th class="r">Alpha / sakit TS</th><th>Status SOP</th><th class="r">Pokok + tunj.</th><th class="r">Pot. absen/telat</th><th class="r">Lembur (jam)</th><th class="r">Bonus</th><th class="r">Kasbon</th><th class="r">Pot. lain</th><th class="r">Bersih</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td><button class="linkbtn" data-act="payDetail" data-id="${r.id}"><b>${esc(r.name)}</b></button><span class="sub">${ROLES[r.role]}</span></td>
       <td class="r num">${r.a.hadir}/${r.a.jadwal}${r.a.izin + r.a.cuti + r.a.sakit ? `<span class="sub">izin/cuti/sakit ${r.a.izin + r.a.cuti + r.a.sakit}</span>` : ""}</td>
-      <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}</td>
+      <td class="r num">${fjam(r.a.jam)}${r.a.lupaOut ? `<span class="sub" style="color:var(--warn)">${r.a.lupaOut}× lupa check-out</span>` : ""}${r.a.cekJadwal ? `<span class="sub" style="color:var(--warn)">${r.a.cekJadwal}× beda jadwal, cek tukar shift</span>` : ""}</td>
       <td class="r num">${r.a.telatMin ? `${r.a.telatMin} mnt<span class="sub">toleransi ${r.a.tolBulan} · dipotong ${r.a.telatHitung}</span>` : "0"}</td>
       <td class="r num">${r.a.alpha + r.a.sakitTS ? `<span class="chip crit">${r.a.alpha} / ${r.a.sakitTS}</span>` : "0"}</td>
       <td><span class="chip ${r.a.sp[1]}">${r.a.sp[0]}</span></td>
@@ -3128,6 +3135,7 @@ async function slipPdf(onlyId) {
     y += 11; doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(70);
     const notes = [`Cara hitung: Gaji bersih = Total pendapatan - Total potongan. Telat dihitung = telat total ${a.telatMin} - toleransi ${a.tolBulan} = ${a.telatHitung} menit (tidak kurang dari 0), dipotong Rp ${n0(r.pm)}/menit. Potongan absensi = (alpha + sakit tanpa izin) ${a.alpha + a.sakitTS} hari x Rp ${n0(r.pa)}. Uang lembur = ${n0(r.lj)} jam x Rp ${n0(r.lr)}.`];
     if (r.ket) notes.push("Catatan: " + r.ket);
+    if (a.cekJadwal) notes.push(`Ada ${a.cekJadwal}x masuk jauh dari jadwal (kemungkinan tukar shift tanpa pengajuan); tidak dipotong telat. Perbaiki di Jadwal bila perlu.`);
     if (a.lupaOut) notes.push(`Ada ${a.lupaOut}x lupa check-out; jam kerja hari tersebut tidak dihitung.`);
     notes.forEach(t => { const l = doc.splitTextToSize(t, CW); doc.text(l, L, y); y += l.length * 3.4 + 0.6; });
     // tanda tangan
