@@ -421,6 +421,13 @@ function makeDb() {
   }
   return {collection, doc: docRef, bump, close: () => SB.removeChannel(chan)};
 }
+/* 6 Nov 2026: login lewat server (fungsi `login`): PIN diperiksa di server dan akun dikunci 15 menit setelah 5x salah. */
+async function pinLogin(u, pin) {
+  const r = await callFn("login", {username: u, pin});
+  const {data, error} = await SB.auth.verifyOtp({token_hash: r.token_hash, type: "magiclink"});
+  if (error) throw error;
+  return data;
+}
 async function callFn(name, body) {
   const {data, error} = await SB.functions.invoke(name, {body});
   if (error) {
@@ -1004,6 +1011,12 @@ function modalRecv(o) {
 async function submitRecv(form) {
   const o = S.orders.find(x => x.id === form.dataset.id); if (!o) return;
   const lines = o.lines.map((l, i) => ({...l, recvQty: num(form["r" + i].value), price: num(form["p" + i].value) || +S.items[l.itemId]?.cost || 0}));
+  /* 6 Nov 2026: jumlah diterima 0 atau jauh dari pesanan harus dikonfirmasi (kasus Ice Mint Syrup diterima 0) */
+  const zero = lines.filter(l => S.items[l.itemId] && !(l.recvQty > 0)), odd = lines.filter(l => S.items[l.itemId] && l.recvQty > 0 && +l.qty > 0 && (l.recvQty > l.qty * 3 || l.recvQty < l.qty / 3));
+  const sig = zero.map(l => l.itemId).concat(odd.map(l => l.itemId)).join();
+  if ((zero.length || odd.length) && form.dataset.recvok !== sig) { form.dataset.recvok = sig;
+    return toast(zero.length === lines.length ? "Semua jumlah diterima 0. Kalau barang belum datang, tutup saja dan terima nanti. Tekan Simpan lagi bila memang tidak ada yang datang."
+      : `${[...zero.map(l => S.items[l.itemId].name + " diterima 0"), ...odd.map(l => `${S.items[l.itemId].name} diterima ${fq(l.recvQty)}, dipesan ${fq(l.qty)}`)].slice(0, 3).join("; ")}. Cek satuannya (isi dalam ${S.items[(zero[0] || odd[0]).itemId].unit}). Tekan Simpan lagi bila sudah benar.`); }
   const ok = await guard(async () => {
     const log = [];
     for (let i = 0; i < lines.length; i++) {
@@ -1040,22 +1053,38 @@ function closingSummary(sh) {
   if (!rows.length) return `<div class="small muted">Tidak ada spoil atau selisih minus.</div>`;
   return `<div class="list">${rows.map(([id, l]) => `<div class="li"><div class="grow">${esc(S.items[id]?.name || "-")}<span class="sub small muted">${l.reason ? esc(l.reason) : ""}${l.usage < 0 ? " · sisa lebih besar dari sistem, cek pengambilan" : ""}</span></div>${l.spoil ? `<span class="chip crit">spoil ${fq(l.spoil)}</span>` : ""}${l.usage < 0 ? `<span class="chip warn">selisih ${fq(l.usage)}</span>` : ""}</div>`).join("")}</div>`;
 }
+/* 6 Nov 2026: pemakaian wajar per bahan untuk membantu closing. Dari penjualan hari itu bila laporan Olsera sudah diunggah,
+   kalau belum dari median pemakaian closing sebelumnya (tanpa closing pertama dan tanpa sisa yang disalin dari sistem). */
+function typicalUse(id, date) {
+  const FC = firstClosing(), v = [];
+  S.closings.filter(c => c.date < date && c.date !== FC[id]).forEach(c => Object.values(c.shifts || {}).forEach(sh => { const l = sh.lines?.[id]; if (l && !(+l.sys > 0 && +l.sisa === +l.sys) && +l.usage >= 0) v.push(+l.usage); }));
+  if (!v.length) return null; v.sort((x, y) => x - y); return v[Math.floor(v.length / 2)];
+}
+function closingHints(date) {
+  const s = S.sales.find(x => x.date === date), sold = {};
+  if (s) usageReport(date).rows.forEach(r => { if (r.t) sold[r.id] = r.t; });
+  return {sold, hasSales: !!s};
+}
+function clHintFor(i, H, d) {
+  const exp = H.hasSales ? (H.sold[i.id] || 0) : typicalUse(i.id, d);
+  return exp == null ? "" : (H.hasSales ? "terjual ≈ " : "biasanya ≈ ") + fqu(exp, i.unit);
+}
 function modalClosing(a) {
   const items = itemsArr().filter(i => i.area === a);
   openModal(`<form data-submit="closing" data-a="${a}" data-d="${bizDay()}" class="modal wide" role="dialog" aria-label="Closing ${AREAS[a]}">
     <div class="modal-h"><h2>Closing ${AREAS[a]} · ${fdate(bizDay())}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">Isi <b>sisa</b> hasil hitung fisik di ${AREAS[a].toLowerCase()} dan <b>spoil</b> (terbuang) yang belum dicatat lewat form waste. Pemakaian = stok sistem − sisa − spoil.</p>
     <div id="cl-draft"></div>
-    <div><button type="button" class="btn sm" data-act="copySys">Salin angka sistem ke kolom sisa yang kosong</button><span class="small muted"> Hanya untuk bahan yang hari ini benar-benar tidak dibuka. Bahan yang terjual tapi sisanya sama dengan sistem tidak dihitung di laporan pemakaian.</span></div>
+    <div><button type="button" class="btn sm" data-act="copySys">Salin angka sistem untuk bahan yang tidak terpakai</button><span class="small muted"> Hanya mengisi bahan yang hari ini tidak terjual / biasanya tidak terpakai. Bahan yang terpakai tetap harus dihitung fisik.</span></div>
     <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Sistem</th><th>Sisa fisik</th><th>Spoil</th><th>Alasan spoil</th></tr></thead><tbody>
-    ${(() => { const WT = wasteToday(); return items.map(i => `<tr><td><b>${esc(i.name)}</b><span class="sub">${esc(i.unit)}${WT[i.id] ? ` · waste tercatat ${fq(WT[i.id])}` : ""}</span></td><td class="r num" data-sys="${i.id}">${fq(stockOf(i.id).area)}</td>
+    ${(() => { const WT = wasteToday(), d = bizDay(), H = closingHints(d); return items.map(i => { const ex = H.hasSales ? (H.sold[i.id] || 0) : typicalUse(i.id, d); return `<tr data-exp="${ex ?? ""}" data-unit="${esc(i.unit)}"><td><b>${esc(i.name)}</b><span class="sub">${esc(i.unit)}${WT[i.id] ? ` · waste tercatat ${fq(WT[i.id])}` : ""}${clHintFor(i, H, d) ? " · " + clHintFor(i, H, d) : ""}</span><span class="sub cl-warn" style="color:var(--crit)"></span></td><td class="r num" data-sys="${i.id}">${fq(stockOf(i.id).area)}</td>
       <td><input id="cs-${i.id}" name="s_${i.id}" type="number" step="any" min="0" inputmode="decimal" style="width:90px" data-sysv="${stockOf(i.id).area || 0}"></td>
       <td><input id="cp-${i.id}" name="p_${i.id}" type="number" step="any" min="0" inputmode="decimal" style="width:80px"></td>
-      <td><select id="cr-${i.id}" name="r_${i.id}" style="min-width:130px"><option value="">-</option>${SPOIL_REASONS.map(x => `<option>${x}</option>`).join("")}</select></td></tr>`).join(""); })()}
+      <td><select id="cr-${i.id}" name="r_${i.id}" style="min-width:130px"><option value="">-</option>${SPOIL_REASONS.map(x => `<option>${x}</option>`).join("")}</select></td></tr>`; }).join(""); })()}
     </tbody></table></div>
     <label class="f">Catatan closing<textarea id="cl-note" name="note" rows="2" maxlength="300" placeholder="mis. mesin grinder 2 bermasalah, susu oat datang terlambat"></textarea></label>
     <div class="foot"><button type="button" class="btn" data-act="close">Tutup (draf tersimpan)</button><button class="btn pri" type="submit">Kirim laporan closing</button></div></form>`);
-  restoreDraft($("#modal form[data-submit=closing]"));
+  restoreDraft($("#modal form[data-submit=closing]")); document.querySelectorAll("#modal input[data-sysv]").forEach(clCheck);
 }
 /* ===== Draf closing otomatis (2 Nov 2026): isian tersimpan di HP setiap diketik, pulih bila aplikasi tertutup/crash ===== */
 const draftKey = f => f && f.dataset.submit === "closing" ? "rouna_draft_closing_" + (f.dataset.d || bizDay()) + "_" + f.dataset.a + "_" + S.me : null;
@@ -1070,16 +1099,26 @@ function restoreDraft(f) {
   let n = 0; Object.entries(d.v).forEach(([name, val]) => { const el = f.elements[name]; if (el) { el.value = val; if (/^s_/.test(name)) n++; } });
   if (box) box.innerHTML = `<div class="alert ok"><div class="grow small"><b>Draf closing dipulihkan</b> · ${n} bahan sudah terisi, tersimpan ${ftime(d.at)}. Lanjutkan dari yang belum diisi.</div><button type="button" class="btn sm ghost" data-act="draftClear">Mulai dari awal</button></div>`;
 }
-document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) saveDraft(f); });
+document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) { saveDraft(f); clCheck(e.target); } });
+/* peringatan langsung per baris closing (6 Nov 2026) */
+function clWarn(tr) {
+  if (!tr) return ""; const si = tr.querySelector("input[data-sysv]"), sp = tr.querySelector("input[name^=p_]"); if (!si || si.value === "") return "";
+  const sys = +si.dataset.sysv || 0, sisa = num(si.value), use = sys - sisa - num(sp?.value || 0), ex = tr.dataset.exp === "" ? null : +tr.dataset.exp, u = tr.dataset.unit || "";
+  if (/^(g|gr|gram|ml)$/i.test(u) && sys >= 200 && sisa > 0 && sisa < Math.min(50, sys * .05)) return `Sisa ${fq(sisa)} ${u}? Sepertinya diisi dalam kg/liter. Isi dalam ${u}.`;
+  if (use < -0.001) return `Sisa lebih banyak ${fqu(-use, u)} dari sistem. Ada barang masuk yang belum dicatat?`;
+  if (ex != null && ex > 0 && use > ex * 3 && use - ex > 1) return `Terpakai ${fqu(use, u)}, padahal ${ex ? "perkiraan ≈ " + fqu(ex, u) : ""}. Cek hitungan.`;
+  if (ex != null && ex > 0 && sys > 0 && sisa === sys) return "Sisa sama persis dengan sistem padahal biasanya terpakai. Sudah dihitung fisik?";
+  return "";
+}
+function clCheck(el) { const tr = el?.closest && el.closest("tr[data-exp]"); if (!tr) return; const w = tr.querySelector(".cl-warn"); if (w) w.textContent = clWarn(tr) ? " " + clWarn(tr) : ""; }
 document.addEventListener("change", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) saveDraft(f); });
 async function submitClosing(form) {
   const a = form.dataset.a, items = itemsArr().filter(i => i.area === a);
   const empty = items.filter(i => form["s_" + i.id].value === "");
   if (empty.length) return toast(`${empty.length} bahan belum diisi sisanya. Isi 0 jika habis.`);
-  /* 6 Nov 2026: tangkap sisa yang diisi dalam kg/liter padahal satuan bahan g/ml (mis. beras 17 padahal 17.000 g) */
-  const unitOdd = items.filter(i => /^(g|gr|gram|ml)$/i.test(String(i.unit).trim()) && (+stockOf(i.id).area || 0) >= 200 && num(form["s_" + i.id].value) > 0 && num(form["s_" + i.id].value) < Math.min(50, (+stockOf(i.id).area || 0) * .05));
-  if (unitOdd.length && form.dataset.unitok !== unitOdd.map(i => i.id).join()) { form.dataset.unitok = unitOdd.map(i => i.id).join(); const i = unitOdd[0];
-    return toast(`${i.name}: sisa ${fq(num(form["s_" + i.id].value))} ${i.unit}, sistem ${fq(stockOf(i.id).area)} ${i.unit}. Sepertinya diisi dalam kg/liter. Isi dalam ${i.unit} (1,5 kg = 1500).${unitOdd.length > 1 ? ` Ada ${unitOdd.length} bahan seperti ini.` : ""} Tekan Kirim lagi bila memang benar.`); }
+  const warns = [...form.querySelectorAll("tr[data-exp]")].filter(tr => clWarn(tr));
+  if (warns.length && form.dataset.warnok !== String(warns.length)) { form.dataset.warnok = String(warns.length); warns.forEach(tr => clCheck(tr.querySelector("input"))); warns[0].scrollIntoView({block: "center"});
+    return toast(`${warns.length} bahan perlu dicek (tulisan merah). Betulkan, atau tekan Kirim lagi bila sudah benar.`); }
   const lines = {}, spoilLog = [];
   for (const i of items) {
     const sys = +stockOf(i.id).area || 0, sisa = num(form["s_" + i.id].value), spoil = num(form["p_" + i.id].value), reason = form["r_" + i.id].value;
@@ -2530,7 +2569,7 @@ function modalAbsen() {
     ${window.isSecureContext === false ? `<div class="alert crit"><div class="grow small"><b>Alamat aplikasi tidak aman (http).</b> Browser memblokir lokasi dan kamera. Buka lewat <b>https://${esc(location.host)}</b>.</div><a class="btn sm pri" href="https://${esc(location.host + location.pathname)}">Buka versi aman</a></div>` : ""}
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
     <div class="row"><span id="geo-status" class="chip">Mengambil lokasi…</span><button type="button" class="btn sm ghost" data-act="geoRetry">Ambil ulang lokasi</button></div>
-    <div id="geo-block" class="alert crit" hidden><div class="grow small"><b>Absen hanya bisa dilakukan di ${esc(S.settings.outlet || "Coffee Rouna")}.</b> Pastikan kamu di outlet, GPS/lokasi HP menyala dan browser diizinkan memakai lokasi, lalu tekan "Ambil ulang lokasi".</div></div>
+    <div id="geo-block" class="alert crit" hidden><div class="grow small"><b>Absen hanya bisa dilakukan di ${esc(S.settings.outlet || "Coffee Rouna")}.</b> Pastikan kamu di outlet, GPS/lokasi HP menyala dan browser diizinkan memakai lokasi, lalu tekan "Ambil ulang lokasi". Kalau tetap gagal padahal sudah di outlet (atau lupa check-out), ajukan koreksi absen.</div><button type="button" class="btn sm" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
     <div class="row"><button type="button" class="btn pri" data-act="camOpen">Ambil selfie</button><label class="btn sm ghost" for="selfie" style="cursor:pointer">Pakai aplikasi kamera</label></div>
     <div id="cam-box" hidden><video id="cam-v" playsinline muted autoplay style="width:100%;max-width:300px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;background:#111;transform:scaleX(-1)"></video><div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-act="camShot">Jepret</button><button type="button" class="btn ghost" data-act="camStop">Batal kamera</button></div></div>
     <input id="selfie" type="file" accept="image/*" capture="user" hidden>
@@ -3618,7 +3657,20 @@ async function submitDocPic(f) {
   });
   if (ok) { closeModal(); toast("Foto tersimpan."); } else btn.disabled = false;
 }
+/* 6 Nov 2026: folder foto (selfie absen, invoice, surat sakit) dibuat privat. URL lama tetap disimpan sebagai penanda;
+   saat ditampilkan diganti tautan bertanda tangan yang berlaku 1 jam dan hanya bisa dibuat oleh akun yang login. */
+const PH_RE = /\/storage\/v1\/object\/(?:public|sign)\/photos\/([^?#"']+)/, PH_CACHE = {};
+async function signPh(u) {
+  const m = String(u || "").match(PH_RE); if (!m || !SB || /[?&]token=/.test(u)) return u; const p = decodeURIComponent(m[1]), c = PH_CACHE[p];
+  if (c && c.exp > Date.now()) return c.url;
+  let data, error; try { ({data, error} = await SB.storage.from("photos").createSignedUrl(p, 3600)); } catch (e) { return u; } if (error || !data?.signedUrl) return u;
+  PH_CACHE[p] = {url: data.signedUrl, exp: Date.now() + 3300e3}; return data.signedUrl;
+}
+let PH_T = 0;
+function fixPh() { document.querySelectorAll('img[src*="/object/public/photos/"],a[href*="/object/public/photos/"]').forEach(async el => { const at = el.tagName === "IMG" ? "src" : "href", v = el.getAttribute(at), s = await signPh(v); if (s !== v && el.getAttribute(at) === v) el.setAttribute(at, s); }); }
+new MutationObserver(() => { clearTimeout(PH_T); PH_T = setTimeout(fixPh, 30); }).observe(document.documentElement, {childList: true, subtree: true});
 async function dlPhoto(url, name) {
+  url = await signPh(url);
   try { const r = await fetch(url); if (!r.ok) throw new Error(r.status); await S.dl.save({filename: name, data: await r.blob()}); toast("Foto diunduh."); }
   catch (e) { window.open(url, "_blank", "noopener"); }
 }
@@ -3930,7 +3982,7 @@ const isHrApprover = () => HR_APPROVER.includes(realRole());
 const isHrAdmin = () => ["owner", "manager", "finance"].includes(realRole());
 const canTrainEdit = () => ["owner", "manager", "finance"].includes(realRole());
 const canLog = () => ["owner", "manager", "headbar", "finance"].includes(realRole());
-const REQ_T = {cuti: "Cuti", izin: "Izin", sakit: "Sakit", swap: "Tukar shift", lembur: "Lembur"};
+const REQ_T = {cuti: "Cuti", izin: "Izin", sakit: "Sakit", swap: "Tukar shift", lembur: "Lembur", koreksi: "Koreksi absen"};
 const REQ_ST = {menunggu_rekan: ["Menunggu rekan", "warn"], menunggu: ["Menunggu persetujuan", "warn"], disetujui: ["Disetujui", "ok"], ditolak: ["Ditolak", "crit"], ditolak_rekan: ["Ditolak rekan", "crit"], batal: ["Dibatalkan", ""]};
 const CONTRACT = {percobaan: "Masa percobaan", kontrak: "Kontrak", tetap: "Tetap", harian: "Harian / part time", magang: "Magang"};
 const LOG_CAT = ["Serah terima", "Komplain tamu", "Alat rusak", "Stok kosong", "Kebersihan", "Lainnya"];
@@ -3945,7 +3997,7 @@ const LEAVE_OF = {cuti: "C", izin: "I", sakit: "SK"};
 function leaveReq(sid, ds) { if (typeof allReqs !== "function") return null; let hit = null; for (const r of allReqs()) { if (r.sid !== sid || !LEAVE_OF[r.type] || r.from > ds || r.to < ds) continue; if (r.status === "disetujui") return r; if (r.status === "menunggu") hit = hit || r; } return hit; }
 const allReqs = () => { const m = new Map(); (S.requests || []).forEach(r => m.set(r.id, r)); (S.hrMine?.requests || []).forEach(r => { if (!m.has(r.id)) m.set(r.id, r); }); return [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); };
 const reqDays = r => Math.round((new Date(r.to + "T12:00") - new Date(r.from + "T12:00")) / 864e5) + 1;
-const reqWhen = r => r.type === "swap" ? fdate(r.from) + (r.date2 ? " ⇄ " + fdate(r.date2) : "") : r.type === "lembur" ? `${fdate(r.from)} · ${String(r.hours).replace(".", ",")} jam` : r.from === r.to ? fdate(r.from) : `${fdate(r.from)} – ${fdate(r.to)} · ${reqDays(r)} hari`;
+const reqWhen = r => r.type === "koreksi" ? fdate(r.from) + (r.tin ? " · masuk " + r.tin : "") + (r.tout ? " · pulang " + r.tout : "") : r.type === "swap" ? fdate(r.from) + (r.date2 ? " ⇄ " + fdate(r.date2) : "") : r.type === "lembur" ? `${fdate(r.from)} · ${String(r.hours).replace(".", ",")} jam` : r.from === r.to ? fdate(r.from) : `${fdate(r.from)} – ${fdate(r.to)} · ${reqDays(r)} hari`;
 const yearsSince = (d, on) => { if (!d) return null; const a = new Date(d + "T12:00"), b = new Date((on || today()) + "T12:00"); return (b - a) / (365.25 * 864e5); };
 function tenure(d) { const y = yearsSince(d); if (y == null) return "-"; const m = Math.floor(y * 12); return m < 1 ? "< 1 bulan" : m < 12 ? m + " bulan" : Math.floor(m / 12) + " th " + (m % 12 ? (m % 12) + " bln" : ""); }
 /* jatah cuti sama dengan aturan di database (hr_quota) */
@@ -3966,6 +4018,16 @@ function hrNotes() {
   done.slice(0, 2).forEach(r => out.push(`<div class="alert ${r.status === "disetujui" ? "ok" : "warn"}"><div class="grow"><b>${REQ_T[r.type]}</b> ${reqWhen(r)} ${REQ_ST[r.status][0].toLowerCase()}${r.note ? `<div class="small">${esc(r.note)}</div>` : ""}</div></div>`));
   if (isHrAdmin()) contractAlerts().slice(0, 3).forEach(x => out.push(`<div class="alert ${x.d < 0 ? "crit" : "warn"}"><div class="grow"><b>${esc(sName(x.id))}</b>: ${x.what} ${x.d < 0 ? "sudah lewat " + -x.d + " hari" : x.d === 0 ? "berakhir hari ini" : "berakhir " + x.d + " hari lagi"} (${fdate(x.date)})</div><button class="btn sm" data-act="hrProfile" data-id="${x.id}">Profil</button></div>`));
   if (canLog()) { const open = logOpen(); if (open.length) out.push(`<div class="alert warn"><div class="grow"><b>${open.length} catatan log shift</b> perlu tindak lanjut</div><button class="btn sm" data-act="hrTab" data-v="log">Lihat</button></div>`); }
+  /* 6 Nov 2026: pengingat harian */
+  { const y = addDays(t, -1), ya = S.attendance.find(a => a.date === y)?.rec || {}, h = new Date().getHours();
+    const myY = ya[S.me]; if (myY?.in && !myY.out && !R.some(r => r.sid === S.me && r.type === "koreksi" && r.from === y && r.status === "menunggu"))
+      out.unshift(`<div class="alert warn"><div class="grow"><b>Kemarin kamu belum check-out</b><div class="small">Masuk ${ftime(myY.in.ts)}. Ajukan koreksi supaya jam kerjamu terhitung.</div></div><button class="btn sm" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>`);
+    if (canEditAtt()) { const lo = Object.entries(ya).filter(([sid, v]) => v?.in && !v.out && !isFlex(sid)).map(([sid]) => sName(sid).split(" ")[0]);
+      if (lo.length) out.push(`<div class="alert warn"><div class="grow"><b>${lo.length} staf lupa check-out kemarin</b><div class="small">${esc(lo.join(", "))}</div></div><button class="btn sm" data-act="nav" data-v="absen">Cek</button></div>`); }
+    if ((realRole() === "owner" || role() === "finance") && h >= 9 && !cashEntries(y.slice(0, 7)).some(c => c.date === y))
+      out.push(`<div class="alert warn"><div class="grow"><b>Kas shift kemarin belum diinput</b><div class="small">Isi tunai dan QRIS POS vs fisik per shift.</div></div><button class="btn sm" data-act="goFin" data-v="kas">Isi</button></div>`);
+    const myArea = role() === "kitchen" ? ["kitchen"] : role() === "headbar" ? ["bar"] : role() === "manager" ? Object.keys(AREAS) : [];
+    if (h >= 4) { const cy = S.closings.find(c => c.date === y), miss = myArea.filter(a => !cy?.shifts?.[a]); if (miss.length) out.push(`<div class="alert warn"><div class="grow"><b>Closing ${miss.map(a => AREAS[a]).join(" & ")} kemarin belum masuk</b></div></div>`); } }
   const tr = trainTodo(S.me); if (tr.length) out.push(`<div class="alert acc"><div class="grow"><b>${tr.length} materi pelatihan</b> belum selesai</div><button class="btn sm" data-act="hrTab" data-v="latih">Kerjakan</button></div>`);
   return out;
 }
@@ -3995,14 +4057,16 @@ function viewTim(head) {
 function reqRow(r, mode) {
   const who = mode === "mine" ? "" : `<b>${esc(sName(r.sid))}</b> · `;
   const partner = r.type === "swap" ? `<span class="sub small">dengan ${esc(sName(r.partner))}${["menunggu", "menunggu_rekan"].includes(r.status) ? ": " + swapPreview(r) : r.status === "disetujui" ? " · jadwal sudah ditukar" : ""}</span>` : "";
-  const photo = r.photo ? `<span class="row" style="gap:6px">${photoBtns(r.photo, docName("surat-sakit", sName(r.sid), r.from), "Lihat surat")}</span>` : "";
+  const photo = r.photo ? `<span class="row" style="gap:6px">${photoBtns(r.photo, docName(r.type === "koreksi" ? "bukti-koreksi" : "surat-sakit", sName(r.sid), r.from), r.type === "koreksi" ? "Lihat bukti" : "Lihat surat")}</span>` : "";
+  const kor = r.type === "koreksi" && r.status === "menunggu" ? (() => { const a = attRec(r.sid, r.from), pl = planOf(r.from)[r.sid]; return `<span class="sub small">Tercatat sekarang: masuk ${a?.in ? ftime(a.in.ts) : "–"}, pulang ${a?.out ? ftime(a.out.ts) : "–"}${pl ? " · jadwal " + esc(pl) : ""}</span>`; })() : "";
   let btn = "";
-  if (mode === "approve") btn = r.type === "sakit" ? `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1" data-code="SK">Setujui</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`
+  if (mode === "approve" && r.type === "koreksi" && !canEditAtt()) btn = `<span class="small muted">Disetujui Owner/Finance</span>`;
+  else if (mode === "approve") btn = r.type === "sakit" ? `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1" data-code="SK">Setujui</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`
     : `<button class="btn sm pri" data-act="hrDecide" data-id="${r.id}" data-ok="1">Setujui</button><button class="btn sm ghost" data-act="hrReject" data-id="${r.id}">Tolak</button>`;
   else if (mode === "partner") btn = `<button class="btn sm pri" data-act="hrPartner" data-id="${r.id}" data-ok="1">Terima</button><button class="btn sm ghost" data-act="hrPartner" data-id="${r.id}" data-ok="0">Tolak</button>`;
   else if (mode === "mine" && ["menunggu", "menunggu_rekan"].includes(r.status)) btn = `<button class="btn sm ghost" data-act="hrCancel" data-id="${r.id}">Batalkan</button>`;
   const dec = r.decidedBy ? `<span class="sub small muted">${r.status === "batal" ? "" : "Oleh " + esc(sName(r.decidedBy)) + " · "}${fdt(r.decidedAt)}${r.code ? " · jadwal " + r.code : ""}${r.note ? " · " + esc(r.note) : ""}</span>` : "";
-  return `<div class="li" style="align-items:flex-start;flex-wrap:wrap"><div class="grow" style="min-width:200px">${who}<b>${REQ_T[r.type]}</b> ${stChip(r)}<span class="sub small">${reqWhen(r)}</span>${partner}${r.reason ? `<span class="sub small muted">${esc(r.reason)}</span>` : ""}${dec}${photo}</div><div class="row" style="gap:6px">${btn}</div></div>`;
+  return `<div class="li" style="align-items:flex-start;flex-wrap:wrap"><div class="grow" style="min-width:200px">${who}<b>${REQ_T[r.type]}</b> ${stChip(r)}<span class="sub small">${reqWhen(r)}</span>${partner}${kor}${r.reason ? `<span class="sub small muted">${esc(r.reason)}</span>` : ""}${dec}${photo}</div><div class="row" style="gap:6px">${btn}</div></div>`;
 }
 function swapPreview(r) { const days = [r.from, r.date2].filter(Boolean); return days.map(d => { const a = planOf(d)[r.sid] || "–", b = planOf(d)[r.partner] || "–"; return `${fdate(d)} ${esc(a)} ⇄ ${esc(b)}`; }).join("; "); }
 function viewRequests() {
@@ -4012,8 +4076,8 @@ function viewRequests() {
   const hist = isHrApprover() ? R.filter(r => !["menunggu", "menunggu_rekan"].includes(r.status) && r.from.startsWith(mo)) : [];
   const months = [...new Set([today().slice(0, 7), ...R.map(r => r.from.slice(0, 7))])].sort().reverse();
   return `<section class="panel"><div class="panel-h"><div><h2>Ajukan</h2><span class="small muted">Sisa cuti ${today().slice(0, 4)}: <b>${Math.max(0, c.q - c.u)}</b> dari ${c.q} hari${c.q === 0 ? " · cuti tahunan berlaku setelah 1 tahun kerja" : ""}</span></div></div>
-    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button></div>
-    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Lembur yang disetujui masuk ke tabel gaji. Penyetuju: Owner, Manager, Headbar, Finance.</p></section>
+    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button><button class="btn" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
+    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Lembur yang disetujui masuk ke tabel gaji. Koreksi absen (lupa check-out, gagal absen) disetujui Owner atau Finance lalu jamnya langsung tercatat. Penyetuju lain: Manager, Headbar.</p></section>
   ${forMe.length ? `<section class="panel"><h2>Permintaan tukar shift untukmu</h2><div class="list">${forMe.map(r => reqRow(r, "partner")).join("")}</div></section>` : ""}
   ${isHrApprover() ? `<section class="panel"><div class="panel-h"><h2>Menunggu persetujuan</h2><span class="chip ${wait.length ? "warn" : "ok"}">${wait.length}</span></div>${wait.length ? `<div class="list">${wait.map(r => reqRow(r, "approve")).join("")}</div>` : `<div class="small muted">Tidak ada pengajuan yang menunggu.</div>`}
     ${R.some(r => r.status === "menunggu_rekan") ? `<div class="small muted">${R.filter(r => r.status === "menunggu_rekan").length} tukar shift masih menunggu jawaban rekan.</div>` : ""}</section>` : ""}
@@ -4039,12 +4103,27 @@ function modalReq(k) {
       <div id="swap-prev" class="small muted"></div>
       <p class="small muted" style="margin:0">Rekan harus menerima dulu, lalu penyetuju menyetujui. Setelah disetujui, jadwal kalian di tanggal itu ditukar.</p>
       <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim ke rekan</button></div></form>`); }
+  if (k === "koreksi") { const y = new Date().getHours() < 12 ? addDays(t, -1) : t;
+    return openModal(`<form data-submit="hrReq" data-k="koreksi" class="modal" role="dialog" aria-label="Koreksi absen"><div class="modal-h"><h2>Koreksi absen</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+      <p class="small muted" style="margin:0">Untuk lupa check-out, atau gagal absen padahal sudah di outlet. Isi jam yang sebenarnya; kosongkan yang sudah benar.</p>
+      <div class="fgrid two"><label class="f" style="grid-column:1/-1">Tanggal shift<input type="date" name="from" value="${y}" min="${addDays(t, -14)}" max="${t}" required></label>
+      <div id="kor-now" class="small muted" style="grid-column:1/-1"></div>
+      <label class="f">Jam masuk<input type="time" name="tin"></label><label class="f">Jam pulang<input type="time" name="tout"><span class="small muted">Lewat tengah malam tetap dihitung shift tanggal di atas.</span></label>
+      <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required placeholder="mis. lupa check-out, HP mati, lokasi tidak terbaca"></label></div>
+      ${picField("kor", "Foto bukti (opsional, mis. layar error)")}
+      <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim pengajuan</button></div></form>`) || korNow(); }
   openModal(`<form data-submit="hrReq" data-k="lembur" class="modal" role="dialog" aria-label="Pengajuan lembur"><div class="modal-h"><h2>Lembur</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     <div class="fgrid two"><label class="f">Tanggal<input type="date" name="from" value="${t}" required></label><label class="f">Jumlah jam<input type="number" name="hours" min="0.5" max="12" step="0.5" required></label>
     <label class="f" style="grid-column:1/-1">Pekerjaan / alasan<input name="reason" maxlength="300" required placeholder="mis. stock opname, event"></label></div>
     <p class="small muted" style="margin:0">Tarif ${rp(lemburDefault())}/jam kecuali diatur lain per orang. Jam yang disetujui otomatis masuk tabel gaji bulan itu.</p>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim pengajuan</button></div></form>`);
 }
+function korNow() {
+  const f = $("form[data-k=koreksi]"), el = $("#kor-now"); if (!f || !el) return; const d = f.from.value, a = attRec(S.me, d), pl = planOf(d)[S.me], def = shiftDef(pl);
+  el.innerHTML = d ? `Tercatat: masuk <b>${a?.in ? ftime(a.in.ts) : "–"}</b>, pulang <b>${a?.out ? ftime(a.out.ts) : "–"}</b>${pl ? ` · jadwal <b>${esc(pl)}</b>${def ? " " + def.s + "–" + def.e : ""}` : ""}` : "";
+  if (!a?.in) f.tin.required = true; else f.tin.required = false;
+}
+document.addEventListener("change", e => { if (e.target.closest && e.target.closest("form[data-k=koreksi]") && e.target.name === "from") korNow(); });
 function swapPrevUpdate(f) {
   const el = $("#swap-prev"); if (!el) return; const p = f.partner.value, ds = [f.from.value, f.date2.value].filter(Boolean);
   el.innerHTML = p && ds.length ? "Jadwal sekarang: " + ds.map(d => `${fdate(d)} kamu <b>${esc(planOf(d)[S.me] || "–")}</b>, ${esc(sName(p).split(" ")[0])} <b>${esc(planOf(d)[p] || "–")}</b>`).join(" · ") : "";
@@ -4056,12 +4135,13 @@ async function submitHrReq(f) {
     if (k === "leave") { p.to = f.to.value; if (p.to < p.from) throw new Error("Tanggal sampai harus setelah tanggal dari."); if (p.type === "sakit" && DOCPIC.sk) p.photo = await upDocPic("sk"); }
     if (k === "swap") { p.partner = f.partner.value; if (f.date2.value) p.date2 = f.date2.value; }
     if (k === "lembur") p.hours = num(f.hours.value);
+    if (k === "koreksi") { p.tin = f.tin.value; p.tout = f.tout.value; if (!p.tin && !p.tout) throw new Error("Isi jam masuk atau jam pulang."); if (DOCPIC.kor) p.photo = await upDocPic("kor"); }
     await hrRpc("hr_request", {p});
     closeModal(); toast(k === "swap" ? "Terkirim ke rekan. Setelah diterima, tinggal menunggu persetujuan." : "Pengajuan terkirim."); S.ui.absTab = "aju"; await hrLoad();
   } catch (e) { b.disabled = false; toast(e.message); }
 }
 async function hrDecide(id, ok, note, code) {
-  try { await hrRpc("hr_decide", {p_id: id, p_ok: ok, p_note: note || "", p_code: code || null}); toast(ok ? "Disetujui. Jadwal diperbarui." : "Pengajuan ditolak."); closeModal(); S.db.bump?.("requests"); S.db.bump?.("shift"); await hrLoad(); }
+  try { await hrRpc("hr_decide", {p_id: id, p_ok: ok, p_note: note || "", p_code: code || null}); toast(ok ? "Disetujui. Jadwal/absen diperbarui." : "Pengajuan ditolak."); closeModal(); S.db.bump?.("requests"); S.db.bump?.("shift"); S.db.bump?.("attendance"); await hrLoad(); }
   catch (e) { toast(e.message); }
 }
 
@@ -4314,7 +4394,8 @@ const ACT = {
   ordCancel: b => confirmBox("Batalkan pengajuan?", "Pengajuan order ini akan dibatalkan.", "Batalkan", async () => { await guard(() => S.db.doc("orders/" + b.dataset.id).update({status: "dibatalkan", cancelledAt: Date.now()})); }),
   exportReport: () => exportReport(),
   closing: b => { const a = b.dataset.a || (role() === "kitchen" ? "kitchen" : "bar"); if (S.closings.find(c => c.date === today())?.shifts?.[a]) { S.view = "closing"; render(); return toast("Closing " + AREAS[a] + " hari ini sudah dikirim."); } modalClosing(a); },
-  copySys: () => { document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value === "") i.value = i.dataset.sysv; }); saveDraft($("#modal form[data-submit=closing]")); },
+  copySys: () => { let n = 0, skip = 0; document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value !== "") return; const ex = +i.closest("tr")?.dataset.exp || 0; if (ex > 0) { skip++; return; } i.value = i.dataset.sysv; n++; clCheck(i); });
+    saveDraft($("#modal form[data-submit=closing]")); toast(`${n} bahan disalin.${skip ? ` ${skip} bahan yang terpakai belum diisi, hitung fisik dulu.` : ""}`); },
   draftClear: () => { const f = $("#modal form[data-submit=closing]"); if (!f) return; lsSet(draftKey(f), null); f.reset(); restoreDraft(f); toast("Draf dihapus."); },
   addLine: b => { const k = b.dataset.k; $("#lines").insertAdjacentHTML("beforeend", lineRow("", "", null, k === "in" ? `<input name="price" type="number" step="any" min="0" placeholder="Rp/satuan" aria-label="Harga per satuan" style="display:${$("#mv-price")?.checked ? "block" : "none"}">` : "")); fixInLines(); },
   rmLine: b => { const l = b.closest(".line"); if (document.querySelectorAll("#lines .line").length > 1) l.remove(); else { l.querySelector("select").value = ""; l.querySelector("input").value = ""; } },
@@ -4430,15 +4511,14 @@ const SUBMIT = {
     const btn = f.querySelector("button[type=submit]"); btn.disabled = true;
     try { await callFn("admin-staff", {action: "bootstrap", name: f.name.value.trim(), username: u, pin}); }
     catch (e) { btn.disabled = false; return toast(e.message || "Gagal membuat akun."); }
-    const {data, error} = await SB.auth.signInWithPassword({email: u + "@" + EMAIL_DOMAIN, password: pinPass(pin)});
-    if (error) { btn.disabled = false; return toast("Akun dibuat, tapi gagal masuk. Coba masuk manual."); }
+    let data; try { data = await pinLogin(u, pin); } catch (e) { btn.disabled = false; return toast("Akun dibuat, tapi gagal masuk. Coba masuk manual."); }
     rememberUser(u, f.name.value.trim()); S.view = "home"; await startData(data.session);
   },
   login: async f => {
     const u = (f.username.value || S.authUser || "").trim().toLowerCase(), pin = f.pin.value;
     const btn = f.querySelector("button[type=submit]"); btn.disabled = true;
-    const {data, error} = await SB.auth.signInWithPassword({email: u + "@" + EMAIL_DOMAIN, password: pinPass(pin)});
-    if (error) { btn.disabled = false; f.pin.value = ""; f.pin.focus(); return toast(/banned/i.test(error.message) ? "Akun ini dinonaktifkan." : /rate|many/i.test(error.message) ? "Terlalu banyak percobaan. Tunggu sebentar." : "Username atau PIN salah."); }
+    let data; try { data = await pinLogin(u, pin); }
+    catch (e) { btn.disabled = false; f.pin.value = ""; f.pin.focus(); return toast(/banned/i.test(e.message) ? "Akun ini dinonaktifkan." : e.message || "Username atau PIN salah."); }
     S.authUser = u; lsSet("runa_view", null); S.view = "home"; await startData(data.session);
   }
 };

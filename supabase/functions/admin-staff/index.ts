@@ -14,7 +14,19 @@ const cors = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
 const email = (u: string) => `${u}@${DOMAIN}`;
-const pw = (p: string) => `rouna-${p}`;
+// 6 Nov 2026: PIN disimpan sebagai HMAC di login_pin (diperiksa edge function `login`); password Auth dibuat acak.
+const pw = (_p: string) => "X" + Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, "0")).join("");
+async function pinHash(admin: any, userId: string, pin: string) {
+  const pep = (await admin.from("secrets").select("value").eq("key", "pin_pepper").maybeSingle()).data?.value as string | undefined;
+  if (!pep) throw new Error("pin_pepper belum diatur");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pep), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(userId + ":" + pin)));
+  return Array.from(sig).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function savePin(admin: any, userId: string, username: string, pin: string) {
+  await admin.from("login_pin").upsert({ user_id: userId, h: await pinHash(admin, userId, pin), updated_at: new Date().toISOString() });
+  await admin.from("login_guard").delete().eq("username", username);
+}
 const okUser = (u: string) => /^[a-z0-9._-]{3,24}$/.test(u);
 const okPin = (p: string) => /^\d{6}$/.test(p);
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -52,6 +64,7 @@ Deno.serve(async (req) => {
       const { data: u, error } = await admin.auth.admin.createUser({ email: email(username), password: pw(pin), email_confirm: true });
       if (error) return fail(error.message);
       await admin.from("profiles").insert({ user_id: u.user.id, staff_id: staffId, username });
+      await savePin(admin, u.user.id, username, pin);
       const prev = existing?.data || { createdAt: Date.now() };
       await putStaff(staffId, { ...prev, name: name || prev.name || "Owner", role: "owner", active: true, username });
       return json({ ok: true, staffId });
@@ -97,11 +110,13 @@ Deno.serve(async (req) => {
         const { error } = await admin.auth.admin.updateUserById(link.user_id, upd);
         if (error) return fail(error.message);
         if (username && username !== link.username) await admin.from("profiles").update({ username }).eq("user_id", link.user_id);
+        if (pin) await savePin(admin, link.user_id, username || link.username, pin);
       } else if (username) {
         if (!pin) return fail("Isi PIN 6 angka untuk akun baru.");
         const { data: u, error } = await admin.auth.admin.createUser({ email: email(username), password: pw(pin), email_confirm: true, ban_duration: active ? "none" : "876000h" });
         if (error) return fail(error.message);
         await admin.from("profiles").insert({ user_id: u.user.id, staff_id: staffId, username });
+        await savePin(admin, u.user.id, username, pin);
       }
       await putStaff(staffId, { ...prev, name, role, active, username: username || prev.username || "", createdAt: prev.createdAt || Date.now() });
       return json({ ok: true, staffId });

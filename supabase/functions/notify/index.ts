@@ -90,8 +90,19 @@ async function compose(kind: string): Promise<string | null> {
   if (wTot > 0) { const top = Object.entries(W).sort((a, b) => b[1] - a[1])[0]; L.push(`🗑️ <b>Waste kemarin</b>: ${rp(wTot)} · terbesar ${esc(name[top[0]] || "?")} ${rp(top[1])}`); }
   if (low.length) L.push(`📦 <b>Stok menipis (${low.length})</b>: ${low.slice(0, 6).map((i) => `${esc(i.name)}${(+st[i.id]?.gudang || 0) <= 0 ? " (habis)" : ""}`).join(", ")}${low.length > 6 ? ", …" : ""}`);
   if (waitApprove || waitRecv) L.push(`🧾 <b>Order</b>: ${waitApprove} menunggu persetujuan · ${waitRecv} menunggu barang`);
-  const due = payables.filter((p) => { const paid = Object.values(p.paid || {}).reduce((s: number, x: any) => s + (+x.amt || 0), 0); return !p.void && paid < (+p.amt || 0) && p.due && p.due <= addDays(t, 3); });
-  if (due.length) { const sum = due.reduce((s, p) => s + (+p.amt || 0) - Object.values(p.paid || {}).reduce((a: number, x: any) => a + (+x.amt || 0), 0), 0); L.push(`📅 <b>Utang jatuh tempo ≤3 hari</b>: ${due.length} invoice, ${rp(sum)}`); }
+  const paidOf = (p: Doc) => Object.values(p.paid || {}).filter((x: any) => !x.void).reduce((s: number, x: any) => s + (+x.amt || 0), 0);
+  const due = payables.filter((p) => !p.void && paidOf(p) < (+p.amt || 0) && p.due && p.due <= addDays(t, 3));
+  if (due.length) { const sum = due.reduce((s, p) => s + (+p.amt || 0) - paidOf(p), 0); L.push(`📅 <b>Utang jatuh tempo ≤3 hari</b>: ${due.length} invoice, ${rp(sum)}`); }
+  // 6 Nov 2026: absen, kas, laporan Olsera, pengajuan
+  const [attY, staff, reqs, skuY] = await Promise.all([one("attendance", y), col("staff"), col("requests"), one("sales", y)]);
+  const sn: Record<string, string> = Object.fromEntries(staff.map((s) => [s.id, String(s.name || "").split(" ")[0]]));
+  const flex = new Set(staff.filter((s) => ["manager", "finance", "headbar", "owner"].includes(s.role)).map((s) => s.id));
+  const lupa = Object.entries(attY?.rec || {}).filter(([sid, v]: [string, any]) => v?.in && !v.out && !flex.has(sid)).map(([sid]) => esc(sn[sid] || "?"));
+  if (lupa.length) L.push(`🕘 <b>Lupa check-out kemarin (${lupa.length})</b>: ${lupa.join(", ")}`);
+  if (!cashY.length) L.push(`💵 <b>Kas shift kemarin</b> belum diinput`);
+  if (!daily && !skuY) L.push(`📊 <b>Laporan Olsera kemarin</b> belum diunggah`);
+  const wait = reqs.filter((r) => r.status === "menunggu");
+  if (wait.length) L.push(`📝 <b>${wait.length} pengajuan staf</b> menunggu persetujuan${wait.some((r) => r.type === "koreksi") ? ` (${wait.filter((r) => r.type === "koreksi").length} koreksi absen)` : ""}`);
   const sopMiss = ["bar-open", "bar-close", "kitchen-open", "kitchen-close"].filter((k) => !sopY?.runs?.[k]);
   if (sopMiss.length) L.push(`📋 <b>SOP kemarin belum diisi</b>: ${sopMiss.length} dari 4 checklist`);
   return `☕ <b>Ringkasan pagi · ${fdate(t)}</b>\n${esc(settings?.outlet || "Coffee Rouna")}\n\n` + L.join("\n");
