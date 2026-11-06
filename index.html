@@ -4423,7 +4423,10 @@ async function submitAttEdit(f) {
 const ACT5 = {attEdit: b => modalAttEdit(b.dataset.sid, b.dataset.date || "")};
 const SUBMIT5 = {attEdit: submitAttEdit};
 Object.assign(ACT, ACT2, ACT3, ACT4, ACT5); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5);
-document.addEventListener("submit", e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (fn) fn(f); });
+/* 6 Nov 2026: cegah kirim ganda (ketuk dua kali) — form yang sedang diproses tidak bisa dikirim lagi sampai selesai. */
+document.addEventListener("submit", async e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (!fn) return;
+  if (f.dataset.busy) return; f.dataset.busy = "1"; const btns = [...f.querySelectorAll("[type=submit]")].filter(x => !x.disabled); btns.forEach(x => x.disabled = true);
+  try { await fn(f); } finally { delete f.dataset.busy; if (f.isConnected) btns.forEach(x => x.disabled = false); } });
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
