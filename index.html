@@ -1119,7 +1119,7 @@ function viewSales() {
 }
 function theoUsage(date) {
   const out = {}, s = S.sales.find(x => x.date === date); let noRec = 0;
-  (s?.rows || []).forEach(r => { const rc = recipeOf(r.name); if (!rc) { noRec++; return; } (rc.lines || []).forEach(l => out[l.itemId] = (out[l.itemId] || 0) + l.qty * r.qty); });
+  (s?.rows || []).forEach(r => { const rc = recipeOf(r.name); if (!rc) { noRec++; return; } (rc.lines || []).forEach(l => out[l.itemId] = (out[l.itemId] || 0) + l.qty * r.qty); if (rc.swap?.itemId) out[rc.swap.itemId] = (out[rc.swap.itemId] || 0) - (+rc.swap.qty || 0) * r.qty; });
   return {out, noRec};
 }
 function actualUsage(date) {
@@ -1137,6 +1137,8 @@ function usageReport(date, rows) {
       const g = (th[l.itemId] ||= {t: 0, by: {}}), use = (+l.qty || 0) * q; g.t += use;
       const b = (g.by[r.name] ||= {name: r.name, qty: 0, per: +l.qty || 0, use: 0}); b.qty += q; b.use += use;
     });
+    if (rc.swap?.itemId) { const g = (th[rc.swap.itemId] ||= {t: 0, by: {}}), per = -(+rc.swap.qty || 0), use = per * q; g.t += use;
+      const b = (g.by[r.name] ||= {name: r.name, qty: 0, per, use: 0}); b.qty += q; b.use += use; }
   });
   const c = S.closings.find(x => x.date === date), ac = {}, base = {}, same = {}, FC = firstClosing();
   const closed = Object.keys(AREAS).filter(a => c?.shifts?.[a]);
@@ -1485,9 +1487,11 @@ async function exportReport() {
   try { await S.dl.save({filename: "laporan-produk-" + A.start + "_" + A.end + ".csv", data: "﻿" + lines.join("\r\n")}); toast("Laporan diunduh."); }
   catch (e) { if (e.code !== "declined") toast("Laporan tidak bisa diunduh di tampilan ini."); }
 }
+/* 6 Nov 2026: add-on pengganti (mis. Oat Milk) mengurangi bahan yang digantikan (fresh milk) */
+const swapCost = rc => rc?.swap?.itemId ? -(+rc.swap.qty || 0) * itemCost(rc.swap.itemId) : 0;
 function recipeCost(name) {
   const rc = recipeOf(name); if (!rc) return null;
-  return (rc.lines || []).reduce((s, l) => s + l.qty * itemCost(l.itemId), 0);
+  return (rc.lines || []).reduce((s, l) => s + l.qty * itemCost(l.itemId), 0) + swapCost(rc);
 }
 function analyze(days) {
   const end = S.sales[0]?.date || today(), start = addDays(end, -(days - 1)), mid = addDays(start, Math.floor(days / 2));
@@ -2319,7 +2323,7 @@ function sold30() {
 function menuRows() {
   const sold = sold30();
   return Object.entries(S.recipes).map(([id, r]) => {
-    const hpp = (r.lines || []).reduce((s, l) => s + l.qty * itemCost(l.itemId), 0), price = +r.price || 0, t = fcFor(r.product), fc = price ? hpp / price : null;
+    const hpp = (r.lines || []).reduce((s, l) => s + l.qty * itemCost(l.itemId), 0) + swapCost(r), price = +r.price || 0, t = fcFor(r.product), fc = price ? hpp / price : null;
     const zero = (r.lines || []).filter(l => !itemCost(l.itemId)).length, sd = sold[id] || {qty: 0, rev: 0};
     return {id, r, name: r.product, type: r.type || "Lainnya", cat: r.cat || r.type || "Lainnya", price, hpp, fc, t, margin: price ? price - hpp : null, zero, n: (r.lines || []).length, qty: sd.qty, rev: sd.rev,
       st: fc == null ? "" : fc > t + .05 ? "crit" : fc > t ? "warn" : "ok"};
@@ -2750,13 +2754,17 @@ function modalRecipe(id, product) {
     <p class="small muted" style="margin:0">Takaran bahan untuk satu porsi, dalam satuan bahan tersebut (mis. 18 g kopi, 150 ml susu, 1 pcs cup).</p>
     <div class="lines" id="lines">${rows}</div>
     <button type="button" class="btn sm" data-act="addLine" data-k="recipe">+ Tambah bahan</button>
+    <details ${r.swap?.itemId ? "open" : ""}><summary class="small"><b>Add-on pengganti</b> (opsional)</summary>
+      <p class="small muted" style="margin:6px 0">Untuk add-on yang menggantikan bahan menu utama, mis. Oat Milk menggantikan fresh milk. Bahan di bawah ini dikurangi dari pemakaian setiap add-on terjual.</p>
+      <div class="fgrid two"><label class="f">Bahan yang digantikan<select id="rc-swap" name="swapItem"><option value="">Tidak ada</option>${itemsArr().slice().sort((a, b) => a.name.localeCompare(b.name, "id")).map(i => `<option value="${i.id}" ${r.swap?.itemId === i.id ? "selected" : ""}>${esc(i.name)} (${esc(i.unit)})</option>`).join("")}</select></label>
+      <label class="f">Jumlah dikurangi<input id="rc-swapq" name="swapQty" type="number" min="0" step="any" value="${r.swap?.qty ?? ""}"></label></div></details>
     <div class="foot">${id && isMgr() ? `<button type="button" class="btn danger" data-act="delRecipe" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan resep</button></div></form>`);
 }
 async function submitRecipe(form) {
   const product = form.product.value.trim(), lines = readLines(form).map(l => ({itemId: l.itemId, qty: l.qty}));
   if (!product || !lines.length) return toast("Isi nama produk dan minimal satu bahan.");
   const id = slug(product);
-  const ok = await guard(async () => { if (form.dataset.id && form.dataset.id !== id) await S.db.doc("recipes/" + form.dataset.id).delete(); const old = (form.dataset.id && S.recipes[form.dataset.id]) || {}; await S.db.doc("recipes/" + id).set({...old, product, lines, price: num(form.price.value), type: form.type.value, cat: form.cat.value.trim(), updatedAt: Date.now()}); });
+  const ok = await guard(async () => { if (form.dataset.id && form.dataset.id !== id) await S.db.doc("recipes/" + form.dataset.id).delete(); const old = (form.dataset.id && S.recipes[form.dataset.id]) || {}; const sw = form.swapItem?.value && num(form.swapQty?.value) > 0 ? {itemId: form.swapItem.value, qty: num(form.swapQty.value)} : null; await S.db.doc("recipes/" + id).set({...old, product, lines, price: num(form.price.value), type: form.type.value, cat: form.cat.value.trim(), swap: sw, updatedAt: Date.now()}); });
   if (ok && S.view === "menu") S.ui.menuId = id;
   if (ok) { closeModal(); toast("Resep tersimpan."); }
 }
