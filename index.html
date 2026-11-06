@@ -3982,7 +3982,7 @@ const isHrApprover = () => HR_APPROVER.includes(realRole());
 const isHrAdmin = () => ["owner", "manager", "finance"].includes(realRole());
 const canTrainEdit = () => ["owner", "manager", "finance"].includes(realRole());
 const canLog = () => ["owner", "manager", "headbar", "finance"].includes(realRole());
-const REQ_T = {cuti: "Cuti", izin: "Izin", sakit: "Sakit", swap: "Tukar shift", lembur: "Lembur", koreksi: "Koreksi absen"};
+const REQ_T = {cuti: "Cuti", izin: "Izin", sakit: "Sakit", swap: "Tukar shift", lembur: "Lembur", koreksi: "Koreksi absen", ganti: "Ganti jam shift"};
 const REQ_ST = {menunggu_rekan: ["Menunggu rekan", "warn"], menunggu: ["Menunggu persetujuan", "warn"], disetujui: ["Disetujui", "ok"], ditolak: ["Ditolak", "crit"], ditolak_rekan: ["Ditolak rekan", "crit"], batal: ["Dibatalkan", ""]};
 const CONTRACT = {percobaan: "Masa percobaan", kontrak: "Kontrak", tetap: "Tetap", harian: "Harian / part time", magang: "Magang"};
 const LOG_CAT = ["Serah terima", "Komplain tamu", "Alat rusak", "Stok kosong", "Kebersihan", "Lainnya"];
@@ -3997,7 +3997,7 @@ const LEAVE_OF = {cuti: "C", izin: "I", sakit: "SK"};
 function leaveReq(sid, ds) { if (typeof allReqs !== "function") return null; let hit = null; for (const r of allReqs()) { if (r.sid !== sid || !LEAVE_OF[r.type] || r.from > ds || r.to < ds) continue; if (r.status === "disetujui") return r; if (r.status === "menunggu") hit = hit || r; } return hit; }
 const allReqs = () => { const m = new Map(); (S.requests || []).forEach(r => m.set(r.id, r)); (S.hrMine?.requests || []).forEach(r => { if (!m.has(r.id)) m.set(r.id, r); }); return [...m.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)); };
 const reqDays = r => Math.round((new Date(r.to + "T12:00") - new Date(r.from + "T12:00")) / 864e5) + 1;
-const reqWhen = r => r.type === "koreksi" ? fdate(r.from) + (r.tin ? " · masuk " + r.tin : "") + (r.tout ? " · pulang " + r.tout : "") : r.type === "swap" ? fdate(r.from) + (r.date2 ? " ⇄ " + fdate(r.date2) : "") : r.type === "lembur" ? `${fdate(r.from)} · ${String(r.hours).replace(".", ",")} jam` : r.from === r.to ? fdate(r.from) : `${fdate(r.from)} – ${fdate(r.to)} · ${reqDays(r)} hari`;
+const reqWhen = r => r.type === "ganti" ? `${fdate(r.from)} · ${esc(r.prev || "–")} → ${esc(r.code)}${shiftDef(r.code) ? " (" + shiftDef(r.code).s + "–" + shiftDef(r.code).e + ")" : ""}` : r.type === "koreksi" ? fdate(r.from) + (r.tin ? " · masuk " + r.tin : "") + (r.tout ? " · pulang " + r.tout : "") : r.type === "swap" ? fdate(r.from) + (r.date2 ? " ⇄ " + fdate(r.date2) : "") : r.type === "lembur" ? `${fdate(r.from)} · ${String(r.hours).replace(".", ",")} jam` : r.from === r.to ? fdate(r.from) : `${fdate(r.from)} – ${fdate(r.to)} · ${reqDays(r)} hari`;
 const yearsSince = (d, on) => { if (!d) return null; const a = new Date(d + "T12:00"), b = new Date((on || today()) + "T12:00"); return (b - a) / (365.25 * 864e5); };
 function tenure(d) { const y = yearsSince(d); if (y == null) return "-"; const m = Math.floor(y * 12); return m < 1 ? "< 1 bulan" : m < 12 ? m + " bulan" : Math.floor(m / 12) + " th " + (m % 12 ? (m % 12) + " bln" : ""); }
 /* jatah cuti sama dengan aturan di database (hr_quota) */
@@ -4076,8 +4076,8 @@ function viewRequests() {
   const hist = isHrApprover() ? R.filter(r => !["menunggu", "menunggu_rekan"].includes(r.status) && r.from.startsWith(mo)) : [];
   const months = [...new Set([today().slice(0, 7), ...R.map(r => r.from.slice(0, 7))])].sort().reverse();
   return `<section class="panel"><div class="panel-h"><div><h2>Ajukan</h2><span class="small muted">Sisa cuti ${today().slice(0, 4)}: <b>${Math.max(0, c.q - c.u)}</b> dari ${c.q} hari${c.q === 0 ? " · cuti tahunan berlaku setelah 1 tahun kerja" : ""}</span></div></div>
-    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button><button class="btn" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
-    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Lembur yang disetujui masuk ke tabel gaji. Koreksi absen (lupa check-out, gagal absen) disetujui Owner atau Finance lalu jamnya langsung tercatat. Penyetuju lain: Manager, Headbar.</p></section>
+    <div class="row"><button class="btn pri" data-act="hrReq" data-k="leave">Cuti / izin / sakit</button><button class="btn" data-act="hrReq" data-k="swap">Tukar shift</button><button class="btn" data-act="hrReq" data-k="ganti">Ganti jam shift</button><button class="btn" data-act="hrReq" data-k="lembur">Lembur</button><button class="btn" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
+    <p class="small muted" style="margin:0">Yang disetujui langsung mengubah jadwal (C cuti, I izin, SK/SX sakit). Tukar shift dan ganti jam shift boleh untuk hari ini. Lembur yang disetujui masuk ke tabel gaji. Koreksi absen (lupa check-out, gagal absen) disetujui Owner atau Finance lalu jamnya langsung tercatat. Penyetuju lain: Manager, Headbar.</p></section>
   ${forMe.length ? `<section class="panel"><h2>Permintaan tukar shift untukmu</h2><div class="list">${forMe.map(r => reqRow(r, "partner")).join("")}</div></section>` : ""}
   ${isHrApprover() ? `<section class="panel"><div class="panel-h"><h2>Menunggu persetujuan</h2><span class="chip ${wait.length ? "warn" : "ok"}">${wait.length}</span></div>${wait.length ? `<div class="list">${wait.map(r => reqRow(r, "approve")).join("")}</div>` : `<div class="small muted">Tidak ada pengajuan yang menunggu.</div>`}
     ${R.some(r => r.status === "menunggu_rekan") ? `<div class="small muted">${R.filter(r => r.status === "menunggu_rekan").length} tukar shift masih menunggu jawaban rekan.</div>` : ""}</section>` : ""}
@@ -4096,13 +4096,22 @@ function modalReq(k) {
       <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim pengajuan</button></div></form>`); }
   if (k === "swap") { const opts = activeStaff().filter(([id]) => id !== S.me);
     return openModal(`<form data-submit="hrReq" data-k="swap" class="modal" role="dialog" aria-label="Tukar shift"><div class="modal-h"><h2>Tukar shift</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-      <div class="fgrid two"><label class="f">Tanggal<input type="date" name="from" value="${addDays(t, 1)}" min="${t}" required></label>
+      <div class="fgrid two"><label class="f">Tanggal<input type="date" name="from" value="${t}" min="${t}" required><span class="small muted">Boleh hari ini.</span></label>
       <label class="f">Rekan<select name="partner" required><option value="">Pilih rekan</option>${opts.map(([id, s]) => `<option value="${id}">${esc(s.name)} · ${ROLES[s.role]}</option>`).join("")}</select></label>
       <label class="f" style="grid-column:1/-1">Tanggal kedua (opsional)<input type="date" name="date2" min="${t}"><span class="small muted">Isi bila kalian bertukar hari: jadwalmu dan jadwal rekan di tanggal ini juga ditukar.</span></label>
       <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required></label></div>
       <div id="swap-prev" class="small muted"></div>
       <p class="small muted" style="margin:0">Rekan harus menerima dulu, lalu penyetuju menyetujui. Setelah disetujui, jadwal kalian di tanggal itu ditukar.</p>
       <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim ke rekan</button></div></form>`); }
+  if (k === "ganti") { const cur = planOf(t)[S.me] || "";
+    return openModal(`<form data-submit="hrReq" data-k="ganti" class="modal" role="dialog" aria-label="Ganti jam shift"><div class="modal-h"><h2>Ganti jam shift</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+      <p class="small muted" style="margin:0">Untuk pindah jam kerjamu sendiri, termasuk hari ini (mis. dari Bar shift 1 ke Bar middle). Kalau bertukar dengan rekan, pakai Tukar shift.</p>
+      <div class="fgrid two"><label class="f">Tanggal<input type="date" name="from" value="${t}" min="${t}" required></label>
+      <label class="f">Jam shift baru<select name="code" required><option value="">Pilih shift</option>${shiftDefs().map(x => `<option value="${esc(x.k)}">${esc(x.k)} · ${esc(x.n)} ${x.s}–${x.e}</option>`).join("")}</select></label>
+      <div id="ganti-now" class="small muted" style="grid-column:1/-1">Jadwal sekarang: <b>${esc(cur || "–")}</b>${shiftDef(cur) ? " " + shiftDef(cur).s + "–" + shiftDef(cur).e : ""}</div>
+      <label class="f" style="grid-column:1/-1">Alasan<input name="reason" maxlength="300" required placeholder="mis. diminta manager, ada keperluan pagi"></label></div>
+      <p class="small muted" style="margin:0">Setelah disetujui Owner/Manager/Headbar/Finance, jadwal langsung berubah dan telat dihitung dari jam baru.</p>
+      <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Kirim pengajuan</button></div></form>`); }
   if (k === "koreksi") { const y = new Date().getHours() < 12 ? addDays(t, -1) : t;
     return openModal(`<form data-submit="hrReq" data-k="koreksi" class="modal" role="dialog" aria-label="Koreksi absen"><div class="modal-h"><h2>Koreksi absen</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
       <p class="small muted" style="margin:0">Untuk lupa check-out, atau gagal absen padahal sudah di outlet. Isi jam yang sebenarnya; kosongkan yang sudah benar.</p>
@@ -4123,7 +4132,8 @@ function korNow() {
   el.innerHTML = d ? `Tercatat: masuk <b>${a?.in ? ftime(a.in.ts) : "–"}</b>, pulang <b>${a?.out ? ftime(a.out.ts) : "–"}</b>${pl ? ` · jadwal <b>${esc(pl)}</b>${def ? " " + def.s + "–" + def.e : ""}` : ""}` : "";
   if (!a?.in) f.tin.required = true; else f.tin.required = false;
 }
-document.addEventListener("change", e => { if (e.target.closest && e.target.closest("form[data-k=koreksi]") && e.target.name === "from") korNow(); });
+document.addEventListener("change", e => { if (e.target.closest && e.target.closest("form[data-k=koreksi]") && e.target.name === "from") korNow();
+  if (e.target.closest && e.target.closest("form[data-k=ganti]") && e.target.name === "from") { const c = planOf(e.target.value)[S.me] || "", el = $("#ganti-now"); if (el) el.innerHTML = `Jadwal sekarang: <b>${esc(c || "–")}</b>${shiftDef(c) ? " " + shiftDef(c).s + "–" + shiftDef(c).e : ""}`; } });
 function swapPrevUpdate(f) {
   const el = $("#swap-prev"); if (!el) return; const p = f.partner.value, ds = [f.from.value, f.date2.value].filter(Boolean);
   el.innerHTML = p && ds.length ? "Jadwal sekarang: " + ds.map(d => `${fdate(d)} kamu <b>${esc(planOf(d)[S.me] || "–")}</b>, ${esc(sName(p).split(" ")[0])} <b>${esc(planOf(d)[p] || "–")}</b>`).join(" · ") : "";
@@ -4135,6 +4145,7 @@ async function submitHrReq(f) {
     if (k === "leave") { p.to = f.to.value; if (p.to < p.from) throw new Error("Tanggal sampai harus setelah tanggal dari."); if (p.type === "sakit" && DOCPIC.sk) p.photo = await upDocPic("sk"); }
     if (k === "swap") { p.partner = f.partner.value; if (f.date2.value) p.date2 = f.date2.value; }
     if (k === "lembur") p.hours = num(f.hours.value);
+    if (k === "ganti") p.code = f.code.value;
     if (k === "koreksi") { p.tin = f.tin.value; p.tout = f.tout.value; if (!p.tin && !p.tout) throw new Error("Isi jam masuk atau jam pulang."); if (DOCPIC.kor) p.photo = await upDocPic("kor"); }
     await hrRpc("hr_request", {p});
     closeModal(); toast(k === "swap" ? "Terkirim ke rekan. Setelah diterima, tinggal menunggu persetujuan." : "Pengajuan terkirim."); S.ui.absTab = "aju"; await hrLoad();
