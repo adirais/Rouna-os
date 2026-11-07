@@ -615,7 +615,7 @@ const navRest = allowed => { const p = navPick(allowed); return navOrder(allowed
 function absFab() {
   if (realRole() === "owner" || !me()) return "";
   const m = S.attendance.find(a => a.date === attDate())?.rec?.[S.me], done = m?.in && m?.out, l = !m?.in ? "Absen" : !m.out ? "Pulang" : "Selesai";
-  return `<button class="bn-abs ${done ? "done" : m?.in ? "in" : ""}" ${done ? 'data-act="hrTab" data-v="hari"' : 'data-act="absenNow"'} aria-label="${l === "Absen" ? "Absen masuk dengan selfie" : l === "Pulang" ? "Absen pulang dengan selfie" : "Absensi hari ini selesai"}"><span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${done ? '<path d="m5 12 5 5L20 7"/>' : '<path d="M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>'}</svg></span><span>${l}</span></button>`;
+  return `<button class="bn-abs ${done ? "done" : m?.in ? "in" : ""}" data-act="absenNow" aria-label="${l === "Absen" ? "Absen masuk dengan selfie" : l === "Pulang" ? "Absen pulang dengan selfie" : "Absensi hari ini selesai"}"><span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${done ? '<path d="m5 12 5 5L20 7"/>' : '<path d="M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>'}</svg></span><span>${l}</span></button>`;
 }
 function mobileNav(allowed, navBtn) {
   const pick = navPick(allowed), rest = navRest(allowed), fab = absFab(), btns = pick.map(n => navBtn(n));
@@ -2561,12 +2561,14 @@ function viewAbsen() {
 }
 function modalAbsen() {
   const ad = attDate(), mine = S.attendance.find(a => a.date === ad)?.rec?.[S.me];
-  if (mine?.out) return toast("Absensi hari ini sudah lengkap.");
-  const kind = mine?.in ? "out" : "in";
+  /* 8 Nov 2026: check-out yang terlanjur (mis. tidak sengaja) boleh diperbarui selama masih di hari kerja yang sama */
+  if (mine?.out && Date.now() - mine.out.ts > 10 * 36e5) return toast("Absensi hari ini sudah lengkap.");
+  const kind = mine?.in ? "out" : "in", redo = !!mine?.out;
   setTimeout(startGeo, 0);
   openModal(`<form data-submit="absen" data-k="${kind}" data-date="${ad}" class="modal" role="dialog" aria-label="Absensi">
     <div class="modal-h"><h2>${kind === "in" ? "Check-in" : "Check-out"} · ${esc(me().name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
     ${window.isSecureContext === false ? `<div class="alert crit"><div class="grow small"><b>Alamat aplikasi tidak aman (http).</b> Browser memblokir lokasi dan kamera. Buka lewat <b>https://${esc(location.host)}</b>.</div><a class="btn sm pri" href="https://${esc(location.host + location.pathname)}">Buka versi aman</a></div>` : ""}
+    ${redo ? `<div class="alert warn"><div class="grow small">Kamu sudah check-out jam <b>${ftime(mine.out.ts)}</b>. Simpan lagi untuk memperbarui jam pulang (mis. tadi tidak sengaja tertekan). Jam lama tetap tersimpan sebagai catatan.</div></div>` : ""}
     <p class="small muted" style="margin:0">Jam tercatat saat kamu menekan Simpan: <b class="num" id="clock">${ftime(Date.now())}</b></p>
     <div class="row"><span id="geo-status" class="chip">Mengambil lokasi…</span><button type="button" class="btn sm ghost" data-act="geoRetry">Ambil ulang lokasi</button></div>
     <div id="geo-block" class="alert crit" hidden><div class="grow small"><b>Absen hanya bisa dilakukan di ${esc(S.settings.outlet || "Coffee Rouna")}.</b> Pastikan kamu di outlet, GPS/lokasi HP menyala dan browser diizinkan memakai lokasi, lalu tekan "Ambil ulang lokasi". Kalau tetap gagal padahal sudah di outlet (atau lupa check-out), ajukan koreksi absen.</div><button type="button" class="btn sm" data-act="hrReq" data-k="koreksi">Koreksi absen</button></div>
@@ -2668,7 +2670,8 @@ async function setOutletGeo(btn) {
 
 function attDate() {
   const t = today(), y = addDays(t, -1), mt = S.attendance.find(a => a.date === t)?.rec?.[S.me], my = S.attendance.find(a => a.date === y)?.rec?.[S.me];
-  if (!mt?.in && my?.in && !my.out && new Date().getHours() < 6 && Date.now() - my.in.ts < 20 * 36e5) return y;
+  /* 8 Nov 2026: sama dengan aturan closing, sebelum jam 04:00 masih dihitung shift kemarin */
+  if (!mt?.in && my?.in && (!my.out || Date.now() - my.out.ts < 10 * 36e5) && new Date().getHours() < 4 && Date.now() - my.in.ts < 22 * 36e5) return y;
   return t;
 }
 let LAST_FILE = null;
@@ -2729,7 +2732,8 @@ async function submitAbsen(form) {
   if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
   if (S.upl && SELFIE.big) { try { const up = await S.upl.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
   const ad = form.dataset.date || today();
-  const ok = await guard(() => mergeDoc("attendance/" + ad, {rec: {[S.me]: {[k]: rec}}}, {date: ad}));
+  const prevOut = k === "out" ? S.attendance.find(a => a.date === ad)?.rec?.[S.me]?.out : null;
+  const ok = await guard(() => mergeDoc("attendance/" + ad, {rec: {[S.me]: {[k]: rec, ...(prevOut ? {outPrev: {ts: prevOut.ts, replacedAt: rec.ts}} : {})}}}, {date: ad}));
   if (ok) { SELFIE = null; closeModal(); toast(k === "in" ? "Check-in tercatat " + ftime(rec.ts) : "Check-out tercatat " + ftime(rec.ts)); }
   else { btn.disabled = false; btn.textContent = "Simpan"; }
 }
