@@ -926,6 +926,10 @@ async function submitMove(form) {
     for (const l of lines) { const s = stockOf(l.itemId); const have = k === "take" ? s.gudang : s.area;
       if ((have || 0) < l.qty) return toast(`${S.items[l.itemId].name}: stok ${k === "take" ? "gudang" : "area"} hanya ${fq(have)}.`); }
   }
+  /* 9 Nov 2026: Masuk ke area hanya untuk barang yang datang langsung ke area (bukan dari gudang). Bila barangnya ada di gudang, tanya dulu. */
+  if (k === "inArea") { const fromG = lines.filter(l => (+stockOf(l.itemId).gudang || 0) >= l.qty), sig = fromG.map(l => l.itemId).join();
+    if (fromG.length && form.dataset.inok !== sig) { form.dataset.inok = sig;
+      return toast(`${fromG.length} bahan ini ada stoknya di gudang (mis. ${S.items[fromG[0].itemId].name}). Kalau diambil dari gudang, pakai "Ambil barang" supaya stok gudang ikut berkurang. Tekan Simpan lagi hanya bila barangnya memang datang langsung ke area.`); } }
   const ok = await guard(async () => {
     const log = [];
     for (const l of lines) {
