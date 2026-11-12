@@ -2919,7 +2919,8 @@ const DEF_SHIFTS = [
   {k: "K1", n: "Kitchen pagi", s: "08:30", e: "16:30"}, {k: "K2", n: "Kitchen malam", s: "16:00", e: "00:00"},
   {k: "R1", n: "Runner shift 1", s: "12:00", e: "20:00"}, {k: "R2", n: "Runner shift 2", s: "16:00", e: "00:00"}];
 /* 6 Nov 2026: izin dua macam. I = izin dicover (berduka, musibah; tidak dipotong). IX = izin tidak dicover (dipotong per hari, bukan alpha). */
-const LEAVE = {L: ["Libur / off", 0], C: ["Cuti", 0], I: ["Izin dicover", 0], IX: ["Izin tidak dicover", 1], SK: ["Sakit (disetujui)", 0], SX: ["Sakit tanpa izin", 1]};
+const LEAVE = {L: ["Libur / off", 0], C: ["Cuti", 0], I: ["Izin dicover", 0], IX: ["Izin tidak dicover", 1], SK: ["Sakit (disetujui)", 0], SX: ["Sakit tanpa izin", 1], A: ["Alfa / tanpa keterangan", 1]};
+/* 12 Nov 2026: A = alfa tanpa keterangan, diisi manual di jadwal; dihitung alpha (dipotong + masuk hitungan SP). */
 const shiftDefs = () => (Array.isArray(S.settings.shifts) && S.settings.shifts.length ? S.settings.shifts : DEF_SHIFTS);
 const shiftDef = k => shiftDefs().find(x => x.k === k);
 const tolTelat = () => S.settings.tolTelat != null ? +S.settings.tolTelat : 5;
@@ -2927,7 +2928,7 @@ const potMenitDefault = () => +S.settings.potMenit || 0;
 const lemburDefault = () => S.settings.lemburJam != null && S.settings.lemburJam !== "" ? +S.settings.lemburJam : 15000;
 const planOf = date => S.shifts.find(x => x.month === date.slice(0, 7))?.plan?.[date] || {};
 function shiftLabel(k) { if (LEAVE[k]) return LEAVE[k][0]; const d = shiftDef(k); return d ? `${d.n} ${d.s}–${d.e}` : ""; }
-function shCls(k) { if (!k) return "sh-x"; if (k === "SX" || k === "IX") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
+function shCls(k) { if (!k) return "sh-x"; if (k === "SX" || k === "IX" || k === "A") return "sh-SX"; if (LEAVE[k]) return k === "L" ? "sh-L" : "sh-C"; const c = k[0]; return c === "K" ? "sh-S" : c === "R" ? "sh-M" : "sh-P"; }
 function weekStart(d) { const x = new Date(d + "T12:00:00"); const dw = (x.getDay() + 6) % 7; return addDays(d, -dw); }
 function myShiftChip() { const k = planOf(today())[S.me]; return k ? `<span class="chip ${LEAVE[k] ? "" : "acc"}">${esc(shiftLabel(k))}</span>` : ""; }
 function viewShift() {
@@ -2968,7 +2969,7 @@ function attStats(mo, sid) {
     if (rec?.in) { g.hadir++; if (rec.out) { row.jam = Math.max(0, (rec.out.ts - rec.in.ts) / 36e5); g.jam += row.jam; } else if (ds < today()) { g.lupaOut++; } }
     if (LEAVE[k]) {
       row.status = LEAVE[k][0];
-      if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "IX") g.izinTC++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++;
+      if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "IX") g.izinTC++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++; else if (k === "A") { g.jadwal++; g.alpha++; }
       if (rec?.in) { g.tanpaJadwal++; row.status += " (tetap masuk)"; }
     } else if (!k || !def) {
       if (rec?.in) { g.tanpaJadwal++; row.status = isFlex(sid) ? "Hadir (jam fleksibel)" : "Masuk tanpa jadwal"; } else { if (!rec) continue; }
