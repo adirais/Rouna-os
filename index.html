@@ -810,7 +810,7 @@ function viewHome() {
   if (["headbar", "kitchen", "manager"].includes(r)) quick.push(qa("move", "take", "out", "Ambil stok"), qa("move", "inArea", "in", "Masuk area"), qa("waste", "", "waste", "Waste"), qa("closing", "", "closing", "Closing"));
   if (["gudang", "manager"].includes(r)) quick.push(qa("move", "in", "in", "Barang masuk"));
   quick.push(qa("newOrder", "", "order", "Order"), qa("absenNow", "", "absen", "Absen"));
-  const recent = S.moves.slice(0, 2).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 6);
+  const recent = S.moves.slice(0, 2).flatMap(movesOf).sort((a, b) => b.ts - a.ts).slice(0, 6);
   return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Halo, ${esc(me().name.split(" ")[0])}</h1></div></div>
   <div class="qa">${quick.join("")}</div>
   ${installCard()}
@@ -843,14 +843,48 @@ function myAttChip() {
 }
 const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
 const whoName = id => id === "import" ? "Impor Excel" : S.staff[id]?.name || "-";
+const movesOf = m => Object.entries(m.list || {}).map(([k, v]) => ({...v, _k: k, _d: m.date}));
+/* 13 Nov 2026: Owner/Manager bisa membetulkan mutasi stok yang salah input (jenis, jumlah) atau menghapusnya. */
+const MV_EDIT = ["in", "inArea", "take", "ret", "waste"];
+const mvEff = (t, q) => ({in: [q, 0], inArea: [0, q], take: [-q, q], ret: [q, -q], waste: [0, -q]}[t] || [0, 0]);
+const canEditMove = m => isMgr() && m && m._k && MV_EDIT.includes(m.t) && !m.void;
 function moveRow(m) {
-  const it = S.items[m.itemId]; const l = MOVE_LBL[m.t] || [m.t, ""];
-  return `<div class="li"><div class="grow"><b>${esc(it?.name || "Bahan dihapus")}</b><span class="sub small muted">${fdt(m.ts)} · oleh <b>${esc(whoName(m.by))}</b>${m.note ? " · " + esc(m.note) : ""}</span></div><span class="chip ${l[1]}">${l[0]}</span><span class="num">${m.qty > 0 && !["spoil", "waste"].includes(m.t) ? "+" : ""}${fq(m.qty)} ${esc(it?.unit || "")}</span></div>`;
+  const it = S.items[m.itemId]; const l = m.void ? ["Dihapus", ""] : MOVE_LBL[m.t] || [m.t, ""];
+  return `<div class="li"><div class="grow"><b>${esc(it?.name || "Bahan dihapus")}</b><span class="sub small muted">${fdt(m.ts)} · oleh <b>${esc(whoName(m.by))}</b>${m.note ? " · " + esc(m.note) : ""}${m.edited ? ` · <i>dibetulkan ${esc(whoName(m.edited.by))}</i>` : ""}</span></div><span class="chip ${l[1]}">${l[0]}</span><span class="num" ${m.void ? 'style="text-decoration:line-through"' : ""}>${m.qty > 0 && !["spoil", "waste"].includes(m.t) ? "+" : ""}${fq(m.void ? m.edited?.prev?.qty || 0 : m.qty)} ${esc(it?.unit || "")}</span>${canEditMove(m) ? `<button class="btn sm ghost" data-act="mvEdit" data-d="${m._d}" data-k="${m._k}" aria-label="Betulkan" title="Betulkan">✎</button>` : ""}</div>`;
+}
+function mvFind(d, k) { const doc = S.moves.find(x => x.date === d); const v = doc?.list?.[k]; return v ? {...v, _k: k, _d: d} : null; }
+/* area sudah dihitung ulang oleh closing setelah mutasi ini? maka hanya stok gudang yang dibetulkan */
+function areaClosedAfter(m) { const a = S.items[m.itemId]?.area; return S.closings.some(c => Object.entries(c.shifts || {}).some(([ar, sh]) => (!a || ar === a) && +sh.ts > +m.ts && sh.lines && m.itemId in sh.lines)); }
+function modalMvEdit(d, k) {
+  const m = mvFind(d, k); if (!canEditMove(m)) return toast("Mutasi ini tidak bisa dibetulkan.");
+  const it = S.items[m.itemId] || {}, closed = areaClosedAfter(m);
+  openModal(`<form data-submit="mvEdit" data-d="${d}" data-k="${k}" class="modal" role="dialog" aria-label="Betulkan mutasi stok"><div class="modal-h"><h2>Betulkan mutasi stok</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p class="small muted" style="margin:0"><b>${esc(it.name || "")}</b> · ${fdt(m.ts)} · oleh ${esc(whoName(m.by))}. Stok gudang dan area disesuaikan otomatis dengan selisihnya.</p>
+    ${closed ? `<div class="alert warn"><div class="grow small">Area ${esc(AREAS[it.area] || "")} sudah closing setelah mutasi ini, jadi stok area sudah sesuai hitungan fisik. Yang dibetulkan hanya stok gudang.</div></div>` : ""}
+    <div class="fgrid two"><label class="f">Jenis<select name="t">${MV_EDIT.map(t => `<option value="${t}" ${t === m.t ? "selected" : ""}>${MOVE_LBL[t][0]}</option>`).join("")}</select></label>
+    <label class="f">Jumlah (${esc(it.unit || "")})<input name="qty" type="number" min="0" step="any" value="${m.qty}" required></label>
+    <label class="f" style="grid-column:1/-1">Alasan<input name="why" maxlength="200" required placeholder="mis. salah pilih jenis, salah ketik jumlah"></label></div>
+    <div class="foot"><button type="button" class="btn danger" data-act="mvDel" data-d="${d}" data-k="${k}" style="margin-right:auto">Hapus mutasi</button><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function applyMvEdit(m, t, qty, why, del) {
+  const closed = areaClosedAfter(m), [og, oa] = mvEff(m.t, +m.qty || 0), [ng, na] = del ? [0, 0] : mvEff(t, qty);
+  const dg = ng - og, da = closed ? 0 : na - oa;
+  if (dg < 0 && (+stockOf(m.itemId).gudang || 0) + dg < -0.001) throw new Error(`Stok gudang ${S.items[m.itemId]?.name || ""} tinggal ${fq(stockOf(m.itemId).gudang)}, tidak cukup untuk perubahan ini.`);
+  const edited = {by: S.me, at: Date.now(), why, prev: {t: m.t, qty: m.qty, ...(m.edited?.prev ? {first: m.edited.prev} : {})}};
+  if (dg || da) await addStock(m.itemId, dg, da);
+  await mergeDoc("moves/" + m._d, {list: {[m._k]: del ? {qty: 0, void: true, edited} : {t, qty, edited}}}, {date: m._d});
+}
+async function submitMvEdit(form) {
+  const m = mvFind(form.dataset.d, form.dataset.k); if (!canEditMove(m)) return toast("Mutasi ini tidak bisa dibetulkan.");
+  const t = form.t.value, qty = num(form.qty.value), why = form.why.value.trim();
+  if (!(qty > 0)) return toast("Jumlah harus lebih dari 0. Untuk membatalkan, pakai Hapus mutasi.");
+  if (t === m.t && qty === +m.qty) return toast("Tidak ada yang berubah.");
+  if (await guard(() => applyMvEdit(m, t, qty, why))) { closeModal(); toast("Mutasi dibetulkan, stok disesuaikan."); }
 }
 
 /* Riwayat mutasi stok 45 hari: siapa, kapan, apa — bisa disaring per orang & jenis (2 Nov 2026) */
 function mutasiPanel() {
-  const u = S.ui, all = S.moves.flatMap(m => Object.values(m.list || {})).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const u = S.ui, all = S.moves.flatMap(movesOf).sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const people = [...new Set(all.map(e => e.by).filter(Boolean))].sort((a, b) => whoName(a).localeCompare(whoName(b)));
   const types = [...new Set(all.map(e => e.t))];
   const list = all.filter(e => (!u.mvBy || e.by === u.mvBy) && (!u.mvT || e.t === u.mvT));
@@ -871,7 +905,7 @@ function viewStock() {
   if (u.st) list = list.filter(i => stockState(i)[0] !== "aman");
   const value = itemsArr().reduce((s, i) => s + ((stockOf(i.id).gudang || 0) + (stockOf(i.id).area || 0)) * itemCost(i.id), 0);
   const canIn = ["gudang", "manager"].includes(r), canTake = ["headbar", "kitchen", "manager", "gudang"].includes(r);
-  const recent = S.moves.slice(0, 3).flatMap(m => Object.values(m.list || {})).sort((a, b) => b.ts - a.ts).slice(0, 25);
+  const recent = S.moves.slice(0, 3).flatMap(movesOf).sort((a, b) => b.ts - a.ts).slice(0, 25);
   if (!itemsArr().length) return `<div class="pagehead"><h1>Stok</h1></div><div class="empty"><b>Belum ada bahan</b><span>Daftarkan bahan baku dulu di Menu → Bahan baku & harga, lengkap dengan satuan, minimum stok, dan harga per satuan.</span>${isMgr() ? `<button class="btn pri" data-act="goMenu" data-v="bahan">Buka bahan baku</button>` : ""}</div>`;
   return `<div class="pagehead"><div><div class="eyebrow">Nilai stok · ${rpk(value)}</div><h1>Stok</h1></div>
     <div class="row">${canIn ? `<button class="btn pri" data-act="move" data-k="in">Barang masuk</button><button class="btn" data-act="move" data-k="opname">Opname gudang</button>` : ""}${canTake ? `${parPreset().length ? `<button class="btn" data-act="takePar">Isi area sampai par (${parPreset().length})</button>` : ""}<button class="btn ${canIn ? "" : "pri"}" data-act="move" data-k="take">Ambil dari gudang</button><button class="btn" data-act="move" data-k="inArea">Masuk ke area</button><button class="btn" data-act="move" data-k="ret">Retur ke gudang</button>${r !== "gudang" && prepItems().length ? `<button class="btn" data-act="prod">Produksi batch</button>` : ""}` : ""}</div></div>
@@ -4446,6 +4480,11 @@ const ACT = {
   expVoid: b => { const r = S.expenses.find(x => x.month === b.dataset.m)?.rec?.[b.dataset.id]; if (!r) return; confirmBox("Hapus pengeluaran?", `${r.cat} · ${rp(r.amt)} · ${fdate(r.date)}.${r.payable ? " Ini pembayaran invoice " + esc(r.to || "supplier") + ", jadi utangnya kembali terbuka." : ""} Hilang dari laporan dan laba-rugi; jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => { const pa = r.payable && S.payables.find(x => x.id === r.payable), pe = pa && Object.entries(pa.paid || {}).find(([, x]) => x.expId === b.dataset.id && !x.void);
     await guard(async () => { if (pe) await voidPayment(pa, pe[0], pe[1]); else await S.db.doc("expenses/" + b.dataset.m).update({rec: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}}); }); }); },
   exportPnl: () => exportPnl(),
+  mvEdit: b => modalMvEdit(b.dataset.d, b.dataset.k),
+  mvDel: b => { const m = mvFind(b.dataset.d, b.dataset.k), why = $("#modal [name=why]")?.value.trim(); if (!canEditMove(m)) return;
+    if (!why) return toast("Isi alasan dulu.");
+    confirmBox("Hapus mutasi?", `${S.items[m.itemId]?.name || ""} · ${MOVE_LBL[m.t][0]} ${fq(m.qty)}. Stok dikembalikan seperti sebelum mutasi ini${areaClosedAfter(m) ? " (hanya gudang, area sudah closing)" : ""}.`, "Hapus", async () => {
+      if (await guard(() => applyMvEdit(m, m.t, 0, why, true))) { closeModal(); toast("Mutasi dihapus, stok disesuaikan."); } }); },
   payDel: b => { const p = S.payables.find(x => x.id === b.dataset.id); if (!p) return; const pays = Object.entries(p.paid || {}).filter(([, x]) => !x.void);
     confirmBox("Hapus invoice?", `${p.supplier || "-"} · ${p.inv || "tanpa nomor"} · ${rp(p.amt)}.${pays.length ? ` ${pays.length} pembayaran (${rp(paidOf(p))}) dan catatan pengeluarannya ikut dihapus.` : ""} Jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => {
       const v = {void: true, voidBy: S.me, voidAt: Date.now()};
@@ -4531,6 +4570,7 @@ async function restoreFile(file) {
 }
 document.addEventListener("change", e => { if (e.target.id === "restore-file" && e.target.files[0]) { restoreFile(e.target.files[0]); e.target.value = ""; } });
 const SUBMIT = {
+  mvEdit: submitMvEdit,
   daily: submitDaily, move: submitMove, order: submitOrder, recv: submitRecv, closing: submitClosing, import: submitImport, absen: submitAbsen, item: submitItem, recipe: submitRecipe, staff: submitStaff, voucher: submitVoucher, waste: submitWaste, prep: submitPrep, prod: submitProd, expense: submitExpense, cash: submitCash, pay: submitPay, sop: submitSop, calib: submitCalib, sopSet: submitSopSet,
   place: async f => { if (await guard(() => S.db.doc("orders/" + f.dataset.id).update({status: "dipesan", supplier: f.supplier.value.trim(), eta: f.eta.value, orderedAt: Date.now(), orderedBy: S.me}))) { closeModal(); toast("Order ditandai sudah dipesan."); } },
   fcSet: async f => { if (await guard(() => mergeDoc("settings/app", {fc: Math.min(80, Math.max(10, num(f.fc.value) || 30)), fcMin: Math.min(80, num(f.fcMin.value)) || 0, fcMak: Math.min(80, num(f.fcMak.value)) || 0}, {}))) { closeModal(); toast("Target food cost tersimpan."); } },
