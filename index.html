@@ -337,7 +337,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  hints: lsGet("rouna_hints") === "1", shifts: [], salary: {}, requests: [], hrprofile: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], olsmonth: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -549,6 +549,7 @@ async function startData(session) {
   subscribe(S.db.collection("voucher").orderBy("month", "desc").limit(12), "vouchers", listColl("vouchers"));
   subscribe(S.db.collection("shift").orderBy("month", "desc").limit(4), "shifts", listColl("shifts"));
   if (["owner", "manager", "headbar", "finance"].includes(r0.data)) subscribe(S.db.collection("requests").orderBy("ts", "desc").limit(400), "requests", listColl("requests"));
+  if (["owner", "manager", "finance", "headbar"].includes(r0.data)) subscribe(S.db.collection("sp"), "sp", mapColl("sp"));
   if (["owner", "manager", "finance"].includes(r0.data)) { subscribe(S.db.collection("hrprofile"), "hrprofile", mapColl("hrprofile")); subscribe(S.db.collection("perf").orderBy("month", "desc").limit(12), "perf", listColl("perf")); }
   subscribe(S.db.collection("training"), "training", mapColl("training"));
   subscribe(S.db.collection("logbook").orderBy("date", "desc").limit(30), "logbook", listColl("logbook"));
@@ -2999,33 +3000,55 @@ function attStats(mo, sid) {
   for (let d = 1; d <= daysInMonth(mo); d++) {
     const ds = mo + "-" + pad(d); if (ds > last) break;
     const lr = leaveReq(sid, ds), k = lr && lr.status === "disetujui" ? (lr.code || LEAVE_OF[lr.type]) : (planOf(ds)[sid] || ""), rec = S.attendance.find(a => a.date === ds)?.rec?.[sid], def = shiftDef(k);
-    const row = {date: ds, k, label: k ? shiftLabel(k) : "", in: rec?.in?.ts || 0, out: rec?.out?.ts || 0, jam: 0, late: 0, early: 0, status: "", geo: rec?.in?.geo};
+    const row = {date: ds, k, label: k ? shiftLabel(k) : "", in: rec?.in?.ts || 0, out: rec?.out?.ts || 0, jam: 0, late: 0, early: 0, status: "", geo: rec?.in?.geo, cat: "", lupa: !!(rec?.in && !rec.out && ds < today())};
     if (rec?.in) { g.hadir++; if (rec.out) { row.jam = Math.max(0, (rec.out.ts - rec.in.ts) / 36e5); g.jam += row.jam; } else if (ds < today()) { g.lupaOut++; } }
     if (LEAVE[k]) {
-      row.status = LEAVE[k][0];
+      row.status = LEAVE[k][0]; row.cat = k === "L" ? "libur" : k === "C" ? "cuti" : k === "SK" || k === "SX" ? "sakit" : k === "A" ? "alpa" : "izin";
+      if (k === "A") (g.alphaDates ||= []).push(ds);
       if (k === "L") g.libur++; else if (k === "C") g.cuti++; else if (k === "I") g.izin++; else if (k === "IX") g.izinTC++; else if (k === "SK") g.sakit++; else if (k === "SX") g.sakitTS++; else if (k === "A") { g.jadwal++; g.alpha++; }
       if (rec?.in) { g.tanpaJadwal++; row.status += " (tetap masuk)"; }
     } else if (!k || !def) {
-      if (rec?.in) { g.tanpaJadwal++; row.status = isFlex(sid) ? "Hadir (jam fleksibel)" : "Masuk tanpa jadwal"; } else { if (!rec) continue; }
+      if (rec?.in) { g.tanpaJadwal++; row.cat = "hadir"; row.status = isFlex(sid) ? "Hadir (jam fleksibel)" : "Masuk tanpa jadwal"; } else { if (!rec) continue; }
     } else if (!rec?.in && lr) {
-      g.menunggu = (g.menunggu || 0) + 1; row.status = `${lr.type === "sakit" ? "Sakit" : lr.type === "cuti" ? "Cuti" : "Izin"} menunggu persetujuan (tidak dihitung alpha)`;
+      g.menunggu = (g.menunggu || 0) + 1; row.cat = lr.type === "sakit" ? "sakit" : lr.type === "cuti" ? "cuti" : "izin"; row.status = `${lr.type === "sakit" ? "Sakit" : lr.type === "cuti" ? "Cuti" : "Izin"} menunggu persetujuan (tidak dihitung alpha)`;
     } else if (!rec?.in) {
-      if (ds === today()) { row.status = "Belum absen"; } else { g.jadwal++; g.alpha++; row.status = "Alpha"; }
+      if (ds === today()) { row.status = "Belum absen"; row.cat = "belum"; } else { g.jadwal++; g.alpha++; row.status = "Alpa"; row.cat = "alpa"; (g.alphaDates ||= []).push(ds); }
     } else {
       g.jadwal++; g.masuk++;
+      row.cat = "hadir";
       if (isFlex(sid)) { g.flex = true; row.status = "Hadir (jam fleksibel)" + (!rec.out && ds < today() ? " · lupa check-out" : ""); g.days.push(row); continue; }
       const st = new Date(ds + "T" + def.s + ":00").getTime(); let en = new Date(ds + "T" + def.e + ":00").getTime(); if (en <= st) en += 864e5;
       row.late = Math.max(0, Math.round((rec.in.ts - st) / 6e4));
       /* 6 Nov 2026: masuk >3 jam dari jadwal hampir pasti tukar shift yang belum dicatat. Tidak dipotong; ditandai untuk dicek. */
-      if (row.late > 180 || (st - rec.in.ts) / 6e4 > 180) { g.cekJadwal = (g.cekJadwal || 0) + 1; row.late = 0; row.status = `Masuk ${ftime(rec.in.ts)}, jauh dari jadwal ${def.s}. Cek tukar shift (tidak dipotong)`; if (!rec.out && ds < today()) row.status += " · lupa check-out"; g.days.push(row); continue; }
+      if (row.late > 180 || (st - rec.in.ts) / 6e4 > 180) { g.cekJadwal = (g.cekJadwal || 0) + 1; row.late = 0; row.cat = "cek"; row.status = `Masuk ${ftime(rec.in.ts)}, jauh dari jadwal ${def.s}. Cek tukar shift (tidak dipotong)`; if (!rec.out && ds < today()) row.status += " · lupa check-out"; g.days.push(row); continue; }
       g.telatMin += row.late; if (row.late > tol) g.telat++;
       if (rec.out) { row.early = Math.max(0, Math.round((en - rec.out.ts) / 6e4)); if (row.early > 0) g.pulangCepat += row.early; }
+      if (row.late > tol) row.cat = "telat";
       row.status = row.late > tol ? `Telat ${row.late} mnt` : "Tepat waktu"; if (!rec.out && ds < today()) row.status += " · lupa check-out";
     }
     g.days.push(row);
   }
   g.tolBulan = tol * g.masuk; g.telatHitung = Math.max(0, g.telatMin - g.tolBulan);
-  g.sp = g.telatHitung > 450 || g.alpha >= 3 ? ["SP3", "crit"] : g.alpha >= 2 ? ["SP2", "crit"] : g.telatHitung > 350 ? ["SP1 tertulis", "crit"] : g.telatHitung > 100 ? ["Teguran lisan", "warn"] : ["Aman", "ok"];
+  g.spRule = spRule(g); g.sp = [g.spRule.label, g.spRule.cls];
+  return g;
+}
+/* 13 Nov 2026: aturan peringatan alpa (Owner): 1 hari = peringatan lisan, 2 hari = SP1,
+   3 hari berturut-turut (hari kerja terjadwal, libur dilewati) atau 5 hari dalam sebulan = SP2.
+   Aturan telat lama tetap: telat bersih >100 mnt lisan, >350 SP1, >450 SP2. Diambil yang paling berat. */
+const SP_LV = ["Aman", "Peringatan lisan", "SP1", "SP2"];
+function spRule(g) {
+  const A = g.alphaDates || [], work = g.days.filter(r => r.cat && !["libur", "belum"].includes(r.cat));
+  let streak = [], best = [];
+  work.forEach(r => { if (r.cat === "alpa") { streak.push(r.date); if (streak.length > best.length) best = [...streak]; } else streak = []; });
+  let lv = 0, why = "", dates = [];
+  if (best.length >= 3) { lv = 3; why = `Alpa ${best.length} hari berturut-turut`; dates = best; }
+  else if (A.length >= 5) { lv = 3; why = `Alpa ${A.length} hari dalam sebulan`; dates = A; }
+  else if (A.length >= 2) { lv = 2; why = `Alpa ${A.length} hari dalam sebulan`; dates = A; }
+  else if (A.length === 1) { lv = 1; why = "Alpa 1 hari"; dates = A; }
+  const tl = g.telatHitung > 450 ? 3 : g.telatHitung > 350 ? 2 : g.telatHitung > 100 ? 1 : 0;
+  if (tl > lv) { lv = tl; why = `Telat bersih ${g.telatHitung} menit dalam sebulan`; dates = g.days.filter(r => r.cat === "telat").map(r => r.date); }
+  else if (tl && tl === lv) why += ` · telat bersih ${g.telatHitung} menit`;
+  return {lv, label: SP_LV[lv], cls: lv >= 2 ? "crit" : lv === 1 ? "warn" : "ok", why, dates};
   return g;
 }
 const fjam = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + " j " + pad(m % 60) + " m"; };
@@ -3138,6 +3161,20 @@ function pdfHead(doc, title, sub) {
   doc.setTextColor(30); doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text(title, 12, 30);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90); doc.text(sub, 12, 36); doc.setTextColor(30);
 }
+async function rekapPdf() {
+  try { toast("Menyiapkan PDF…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
+  const sid = (isHrApprover() || isHrAdmin()) ? S.ui.rkSid : S.me, mo = S.ui.rkMo || today().slice(0, 7); if (!sid) return;
+  const {g, rows} = rekapRows(mo, sid), sp = g.spRule, {jsPDF} = window.jspdf, doc = new jsPDF({unit: "mm", format: "a4"}), fd = ds => +ds.slice(8) + " " + BLN[+ds.slice(5, 7) - 1];
+  pdfHead(doc, "Rekap Absensi · " + sName(sid), `${ROLES[S.staff[sid]?.role] || ""} · ${monthLabel(mo)} · hadir ${g.hadir}/${g.jadwal} · terlambat ${g.telat}x (${g.telatMin} mnt) · alpa ${g.alpha} · izin ${g.izin + g.izinTC} · sakit ${g.sakit + g.sakitTS} · cuti ${g.cuti}`);
+  doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text(sp.lv ? "Masuk kriteria " + sp.label + ": " + sp.why + " (" + sp.dates.map(fd).join(", ") + ")" : "Status: aman", 12, 42);
+  const prob = rows.filter(r => r.probs.length); doc.setFont("helvetica", "normal");
+  doc.text(doc.splitTextToSize("Tanggal bermasalah: " + (prob.length ? prob.map(r => fd(r.date) + ": " + r.probs.join(", ")).join("; ") : "tidak ada"), 186), 12, 48);
+  doc.autoTable({startY: 58, styles: {fontSize: 7.5, cellPadding: 1.3}, margin: {left: 12, right: 12}, headStyles: {fillColor: [30, 30, 30], textColor: 255},
+    head: [["Tgl", "Hari", "Jadwal", "Masuk", "Pulang", "Status", "Catatan"]],
+    body: rows.map(r => [+r.date.slice(8), HARI[new Date(r.date + "T12:00:00").getDay()], r.k ? r.k + (shiftDef(r.k) ? " " + shiftDef(r.k).s + "-" + shiftDef(r.k).e : "") : "-", r.in ? ftime(r.in) : "-", r.out ? ftime(r.out) : r.lupa ? "lupa" : "-", r.future ? "belum lewat" : (RK_CAT[r.cat] || RK_CAT[""])[0], r.probs.filter(x => x !== "Alpa" && !x.startsWith((RK_CAT[r.cat] || RK_CAT[""])[0])).join(", ")]),
+    didParseCell: d => { if (d.section !== "body") return; const r = rows[d.row.index]; if (r.cat === "alpa" || r.cat === "telat") d.cell.styles.fillColor = [253, 232, 232]; else if (r.probs.length) d.cell.styles.fillColor = [255, 246, 214]; }});
+  doc.save(`rekap-absensi-${(S.staff[sid]?.name || sid).split(" ")[0].toLowerCase()}-${mo}.pdf`); toast("PDF rekap diunduh.");
+}
 async function payPdf() {
   try { toast("Menyiapkan PDF…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
   const mo = S.ui.finMonth, rows = payRows(mo), {jsPDF} = window.jspdf, doc = new jsPDF({orientation: "landscape", unit: "mm", format: "a4"});
@@ -3153,7 +3190,7 @@ async function payPdf() {
   doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text("Ke laporan keuangan", 12, y); doc.setFont("helvetica", "normal");
   doc.text(`Beban gaji bersih ${monthLabel(mo)}: ${pdfRp(sum(r => r.net))}${P.rev ? ` · ${((sum(r => r.net)) / P.rev * 100).toFixed(1).replace(".", ",")}% dari pendapatan ${pdfRp(P.rev)}` : ""}`, 12, y + 5);
   doc.text(`Total beban gaji karyawan di laba-rugi (termasuk kasbon, part-time, lembur, bonus yang tercatat di Pengeluaran): ${pdfRp(P.labor)}`, 12, y + 10);
-  doc.setTextColor(120); doc.text("Peringatan SOP: >100 mnt teguran lisan · >350 mnt SP1 tertulis · >450 mnt / 3x alpha SP3 · 2x alpha SP2.", 12, y + 16);
+  doc.setTextColor(120); doc.text("Peringatan: alpa 1 hari lisan · 2 hari SP1 · 3 hari berturut-turut atau 5 hari SP2 · telat bersih >100 mnt lisan, >350 SP1, >450 SP2.", 12, y + 16);
   doc.save(`rekap-gaji-${mo}.pdf`); toast("PDF rekap diunduh.");
 }
 function terbilang(n) {
@@ -4084,7 +4121,7 @@ function contractAlerts() {
 }
 
 /* ===== Halaman Tim ===== */
-const HR_TABS = () => [["hari", "Absen"], ["jadwal", "Jadwal"], ["aju", "Pengajuan"], ...(isHrAdmin() ? [["profil", "Profil"]] : []), ["kinerja", "Kinerja"], ["latih", "Pelatihan"], ["log", "Log shift"]];
+const HR_TABS = () => [["hari", "Absen"], ["jadwal", "Jadwal"], ["rekap", "Rekap"], ["aju", "Pengajuan"], ...(isHrAdmin() ? [["profil", "Profil"]] : []), ["kinerja", "Kinerja"], ["latih", "Pelatihan"], ["log", "Log shift"]];
 function hrSeg() {
   const t = S.ui.absTab || "hari", R = allReqs();
   const badge = k => { const n = k === "aju" ? R.filter(r => (r.partner === S.me && r.status === "menunggu_rekan") || (isHrApprover() && r.status === "menunggu" && r.sid !== S.me)).length : k === "latih" ? trainTodo(S.me).length : 0; return n ? ` <span class="badge-n">${n}</span>` : ""; };
@@ -4093,8 +4130,78 @@ function hrSeg() {
 function viewTim(head) {
   const t = S.ui.absTab;
   if (!S.hrMineAt || Date.now() - S.hrMineAt > 60000) { S.hrMineAt = Date.now(); setTimeout(hrLoad, 0); }
-  const body = t === "aju" ? viewRequests() : t === "profil" && isHrAdmin() ? viewProfiles() : t === "kinerja" ? viewPerf() : t === "latih" ? viewTraining() : t === "log" ? viewLogbook() : "";
+  const body = t === "rekap" ? viewRekap() : t === "aju" ? viewRequests() : t === "profil" && isHrAdmin() ? viewProfiles() : t === "kinerja" ? viewPerf() : t === "latih" ? viewTraining() : t === "log" ? viewLogbook() : "";
   return head + hrSeg() + body;
+}
+
+/* ----- Rekap absensi bulanan per karyawan (13 Nov 2026) ----- */
+const RK_CAT = {hadir: ["Hadir", "ok"], telat: ["Terlambat", "crit"], alpa: ["Alpa", "crit"], izin: ["Izin", ""], sakit: ["Sakit", ""], cuti: ["Cuti", ""], libur: ["Libur", ""], belum: ["Belum absen", ""], cek: ["Cek jadwal", "warn"], "": ["Tidak ada jadwal", ""]};
+const spDoc = sid => S.sp[sid]?.list || {};
+const spList = sid => Object.entries(spDoc(sid)).map(([id, x]) => ({id, ...x})).filter(x => !x.void).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+function rekapRows(mo, sid) {
+  const g = attStats(mo, sid), by = Object.fromEntries(g.days.map(r => [r.date, r])), last = mo === today().slice(0, 7) ? +today().slice(8) : daysInMonth(mo), out = [];
+  for (let d = 1; d <= daysInMonth(mo); d++) {
+    const ds = mo + "-" + pad(d), r = by[ds] || {date: ds, k: d <= last ? planOf(ds)[sid] || "" : planOf(ds)[sid] || "", cat: "", in: 0, out: 0, late: 0, early: 0, future: d > last};
+    const probs = [];
+    if (r.cat === "alpa") probs.push("Alpa");
+    if (r.cat === "telat") probs.push(`Terlambat ${r.late} menit`);
+    if (r.early > 0 && r.cat !== "cek") probs.push(`Pulang lebih awal ${r.early} menit`);
+    if (r.lupa) probs.push("Lupa absen pulang");
+    if (r.cat === "cek") probs.push("Masuk jauh dari jadwal (cek tukar shift)");
+    out.push({...r, probs, future: d > last});
+  }
+  return {g, rows: out};
+}
+function viewRekap() {
+  const all = isHrApprover() || isHrAdmin(), staff = all ? activeStaff() : [[S.me, S.staff[S.me] || {name: "Saya"}]];
+  let sid = all ? S.ui.rkSid : S.me; if (!staff.some(([id]) => id === sid)) sid = S.ui.rkSid = staff[0]?.[0];
+  if (!sid) return `<div class="empty"><b>Belum ada karyawan</b></div>`;
+  const mo = S.ui.rkMo || today().slice(0, 7), months = [...Array(12)].map((_, i) => { const d = new Date(today().slice(0, 7) + "-01T12:00:00"); d.setMonth(d.getMonth() - i); return d.toISOString().slice(0, 7); });
+  const {g, rows} = rekapRows(mo, sid), sp = g.spRule, hist = spList(sid), sn = sName(sid);
+  const sakitIzin = g.izin + g.izinTC + g.sakit + g.sakitTS, prob = rows.filter(r => r.probs.length);
+  const canIssue = isHrAdmin(), fd = ds => +ds.slice(8) + " " + BLN[+ds.slice(5, 7) - 1];
+  const issued = hist.some(h => h.month === mo && SP_LV.indexOf(h.type) >= sp.lv);
+  return `<section class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Rekap absensi bulanan</h2>
+      <div class="row">${all ? `<select data-ui="rkSid" aria-label="Karyawan" style="width:auto">${staff.map(([id, x]) => `<option value="${id}" ${id === sid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : ""}
+      <select data-ui="rkMo" aria-label="Bulan" style="width:auto">${months.map(m => `<option value="${m}" ${m === mo ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>
+      <button class="btn sm" data-act="rkPdf">Unduh PDF</button></div></div>
+    <p class="small muted" style="margin:0"><b>${esc(sn)}</b> · ${ROLES[S.staff[sid]?.role] || ""} · ${monthLabel(mo)}${mo === today().slice(0, 7) ? " (sampai hari ini)" : ""}</p>
+    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+      <div class="kpi"><span class="eyebrow">Hadir</span><span class="v">${g.hadir}</span><span class="small muted">dari ${g.jadwal} hari terjadwal</span></div>
+      <div class="kpi"><span class="eyebrow">Terlambat</span><span class="v" style="color:${g.telat ? "var(--crit)" : "inherit"}">${g.telat}×</span><span class="small muted">total ${g.telatMin} menit · dihitung ${g.telatHitung} menit</span></div>
+      <div class="kpi"><span class="eyebrow">Alpa</span><span class="v" style="color:${g.alpha ? "var(--crit)" : "inherit"}">${g.alpha}</span><span class="small muted">hari</span></div>
+      <div class="kpi"><span class="eyebrow">Izin / Sakit</span><span class="v">${g.izin + g.izinTC} / ${g.sakit + g.sakitTS}</span><span class="small muted">cuti ${g.cuti} · libur ${g.libur}</span></div>
+    </div>
+    <div class="alert ${sp.lv ? sp.cls : "ok"}"><div class="grow"><b>${sp.lv ? "Masuk kriteria " + sp.label : "Aman, belum masuk kriteria peringatan"}</b>${sp.lv ? `<div class="small">${esc(sp.why)}: ${sp.dates.map(fd).join(", ")}</div>` : ""}${issued ? `<div class="small">Sudah diterbitkan untuk bulan ini.</div>` : ""}</div>
+      ${sp.lv && canIssue && !issued ? `<button class="btn sm" data-act="spIssue" data-sid="${sid}" data-mo="${mo}">Terbitkan ${esc(sp.label)}</button>` : ""}</div>
+    <p class="small muted" style="margin:0">Aturan: alpa 1 hari = peringatan lisan · 2 hari = SP1 · 3 hari berturut-turut atau 5 hari = SP2. Telat bersih >100 mnt lisan, >350 SP1, >450 SP2.</p>
+  </section>
+  <section class="panel"><h2>Tanggal bermasalah (${prob.length})</h2>
+    ${prob.length ? `<div class="row" style="gap:6px">${prob.map(r => `<span class="chip ${r.cat === "alpa" || r.cat === "telat" ? "crit" : "warn"}" style="white-space:normal;height:auto">${fd(r.date)}: ${esc(r.probs.join(", "))}</span>`).join("")}</div>` : `<p class="small muted" style="margin:0">Tidak ada. Absensi bulan ini bersih.</p>`}
+  </section>
+  <section class="panel"><h2>Kalender ${monthLabel(mo)}</h2><div class="tbl-wrap"><table class="rk"><thead><tr><th>Tgl</th><th>Hari</th><th>Jadwal</th><th class="r">Masuk</th><th class="r">Pulang</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(r => { const c = RK_CAT[r.cat] || RK_CAT[""], bad = r.probs.length, d = new Date(r.date + "T12:00:00"), def = shiftDef(r.k);
+      return `<tr style="${bad ? `background:${r.cat === "alpa" || r.cat === "telat" ? "#fde8e8" : "#fff6d6"}` : r.future ? "opacity:.45" : ""}"><td class="num">${+r.date.slice(8)}</td><td>${HARI[d.getDay()]}</td>
+        <td>${r.k ? `<span class="chip ${shCls(r.k)}">${esc(r.k)}</span>${def ? ` <span class="small muted" style="white-space:nowrap">${def.s}–${def.e}</span>` : ""}` : '<span class="muted">–</span>'}</td>
+        <td class="r num">${r.in ? ftime(r.in) : "–"}</td><td class="r num">${r.out ? ftime(r.out) : r.lupa ? '<span style="color:var(--crit)">lupa</span>' : "–"}</td>
+        <td>${r.future ? '<span class="muted small">belum lewat</span>' : `<span class="chip ${c[1]}">${c[0]}</span>`}${bad ? ` <span class="small" style="color:var(--crit)">${esc(r.probs.filter(x => x !== "Alpa" && !x.startsWith(c[0])).join(" · "))}</span>` : ""}</td></tr>`; }).join("")}
+  </tbody></table></div></section>
+  ${all ? `<section class="panel"><h2>Riwayat SP · ${esc(sn)}</h2>
+    ${hist.length ? `<div class="list">${hist.map(h => `<div class="li"><div class="grow"><b>${esc(h.type)}</b> · ${fdate(h.date)}<span class="sub small muted">${esc(h.reason || "")}${h.dates?.length ? " · tanggal: " + h.dates.map(fd).join(", ") : ""} · oleh ${esc(whoName(h.by))}</span></div>${canIssue ? `<button class="btn sm ghost" data-act="spDel" data-sid="${sid}" data-id="${h.id}" aria-label="Hapus">✕</button>` : ""}</div>`).join("")}</div>` : `<p class="small muted" style="margin:0">Belum ada SP yang diterbitkan.</p>`}
+    ${canIssue ? `<button class="btn sm" data-act="spIssue" data-sid="${sid}" data-mo="${mo}" data-manual="1">Catat SP manual</button>` : ""}</section>` : ""}`;
+}
+function modalSp(sid, mo, manual) {
+  const g = attStats(mo, sid), sp = g.spRule, fd = ds => +ds.slice(8) + " " + BLN[+ds.slice(5, 7) - 1];
+  openModal(`<form data-submit="spIssue" data-sid="${sid}" data-mo="${mo}" class="modal" role="dialog" aria-label="Terbitkan SP"><div class="modal-h"><h2>Terbitkan peringatan · ${esc(sName(sid))}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f">Jenis<select name="type">${SP_LV.slice(1).map(x => `<option ${x === (manual ? "SP1" : sp.label) ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+    <label class="f">Tanggal terbit<input type="date" name="date" value="${today()}" required></label>
+    <label class="f" style="grid-column:1/-1">Alasan<textarea name="reason" rows="3" maxlength="400" required>${manual ? "" : esc(`${sp.why} (${monthLabel(mo)})`)}</textarea></label></div>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitSpIssue(form) {
+  const sid = form.dataset.sid, mo = form.dataset.mo, g = attStats(mo, sid), id = uid();
+  const rec = {type: form.type.value, date: form.date.value, reason: form.reason.value.trim(), month: mo, dates: form.type.value === g.spRule.label ? g.spRule.dates : [], by: S.me, at: Date.now()};
+  if (await guard(() => mergeDoc("sp/" + sid, {list: {[id]: rec}}, {sid}))) { closeModal(); toast(rec.type + " tersimpan di riwayat " + sName(sid) + "."); }
 }
 
 /* ----- Pengajuan ----- */
@@ -4480,6 +4587,9 @@ const ACT = {
   expVoid: b => { const r = S.expenses.find(x => x.month === b.dataset.m)?.rec?.[b.dataset.id]; if (!r) return; confirmBox("Hapus pengeluaran?", `${r.cat} · ${rp(r.amt)} · ${fdate(r.date)}.${r.payable ? " Ini pembayaran invoice " + esc(r.to || "supplier") + ", jadi utangnya kembali terbuka." : ""} Hilang dari laporan dan laba-rugi; jejaknya tetap ada di Riwayat perubahan.`, "Hapus", async () => { const pa = r.payable && S.payables.find(x => x.id === r.payable), pe = pa && Object.entries(pa.paid || {}).find(([, x]) => x.expId === b.dataset.id && !x.void);
     await guard(async () => { if (pe) await voidPayment(pa, pe[0], pe[1]); else await S.db.doc("expenses/" + b.dataset.m).update({rec: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}}); }); }); },
   exportPnl: () => exportPnl(),
+  spIssue: b => modalSp(b.dataset.sid, b.dataset.mo, !!b.dataset.manual),
+  spDel: b => confirmBox("Hapus catatan SP?", "Catatan ini hilang dari riwayat (jejaknya tetap di Log aktivitas).", "Hapus", async () => { await guard(() => mergeDoc("sp/" + b.dataset.sid, {list: {[b.dataset.id]: {void: true, voidBy: S.me, voidAt: Date.now()}}}, {sid: b.dataset.sid})); }),
+  rkPdf: () => rekapPdf(),
   mvEdit: b => modalMvEdit(b.dataset.d, b.dataset.k),
   mvDel: b => { const m = mvFind(b.dataset.d, b.dataset.k), why = $("#modal [name=why]")?.value.trim(); if (!canEditMove(m)) return;
     if (!why) return toast("Isi alasan dulu.");
@@ -4570,6 +4680,7 @@ async function restoreFile(file) {
 }
 document.addEventListener("change", e => { if (e.target.id === "restore-file" && e.target.files[0]) { restoreFile(e.target.files[0]); e.target.value = ""; } });
 const SUBMIT = {
+  spIssue: submitSpIssue,
   mvEdit: submitMvEdit,
   daily: submitDaily, move: submitMove, order: submitOrder, recv: submitRecv, closing: submitClosing, import: submitImport, absen: submitAbsen, item: submitItem, recipe: submitRecipe, staff: submitStaff, voucher: submitVoucher, waste: submitWaste, prep: submitPrep, prod: submitProd, expense: submitExpense, cash: submitCash, pay: submitPay, sop: submitSop, calib: submitCalib, sopSet: submitSopSet,
   place: async f => { if (await guard(() => S.db.doc("orders/" + f.dataset.id).update({status: "dipesan", supplier: f.supplier.value.trim(), eta: f.eta.value, orderedAt: Date.now(), orderedBy: S.me}))) { closeModal(); toast("Order ditandai sudah dipesan."); } },
