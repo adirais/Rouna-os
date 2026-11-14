@@ -2975,7 +2975,7 @@ function viewShift() {
       : `<span class="sh ${shCls(k)}">${k || "–"}</span>`; };
   const count = d => Object.values(planOf(d)).filter(k => k && !LEAVE[k]).length;
   return `<section class="panel"><div class="panel-h"><div class="row"><button class="btn sm" data-act="wk" data-v="-7" aria-label="Minggu sebelumnya">‹</button><h2 style="margin:0 4px">${fdate(days[0])} – ${fdate(days[6])}</h2><button class="btn sm" data-act="wk" data-v="7" aria-label="Minggu berikutnya">›</button></div>
-      ${edit ? `<button class="btn sm" data-act="copyWeek">Salin minggu lalu</button>` : ""}</div>
+      ${edit ? `<button class="btn sm" data-act="copyWeek">Salin minggu lalu</button>${S.ui.copyUndo?.ws === ws ? `<button class="btn sm" data-act="undoCopyWeek">Batalkan salin</button>` : ""}` : ""}</div>
     <div class="tbl-wrap"><table class="shift-tbl"><thead><tr><th>Staf</th>${days.map(d => `<th class="c ${d === today() ? "today" : ""}">${fdate(d).split(",")[0]}<span class="sub">${+d.slice(8)}</span></th>`).join("")}</tr></thead><tbody>
       ${staff.map(([id, s]) => `<tr class="${id === S.me ? "me" : ""}"><td><b>${esc(s.name)}</b><span class="sub">${ROLES[s.role]}</span></td>${days.map(d => `<td class="c">${cell(d, id)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="8" class="muted">Belum ada staf. Tambah di Pengaturan → Staf.</td></tr>`}
       <tr><td class="small muted">Masuk</td>${days.map(d => `<td class="c small muted num">${count(d) || ""}</td>`).join("")}</tr></tbody></table></div>
@@ -2987,11 +2987,24 @@ async function saveShift(date, sid, k) {
   await guard(() => mergeDoc("shift/" + mo, {plan: {[date]: {[sid]: k}}}, {month: mo}));
 }
 async function copyWeek() {
-  const ws = S.ui.wk || weekStart(today()), patch = {};
-  for (let i = 0; i < 7; i++) { const d = addDays(ws, i), src = planOf(addDays(d, -7)); if (Object.keys(src).length) (patch[d.slice(0, 7)] ||= {})[d] = src; }
+  const ws = S.ui.wk || weekStart(today()), patch = {}, prev = {}, fd = d => +d.slice(8) + " " + BLN[+d.slice(5, 7) - 1];
+  for (let i = 0; i < 7; i++) { const d = addDays(ws, i), src = planOf(addDays(d, -7)); if (Object.keys(src).length) { (patch[d.slice(0, 7)] ||= {})[d] = src; prev[d] = structuredClone(planOf(d)); } }
   if (!Object.keys(patch).length) return toast("Minggu lalu belum ada jadwal.");
-  const ok = await guard(async () => { for (const [mo, plan] of Object.entries(patch)) await mergeDoc("shift/" + mo, {plan}, {month: mo}); });
-  if (ok) toast("Jadwal minggu lalu disalin.");
+  const filled = Object.values(prev).filter(p => Object.keys(p).length).length;
+  /* 14 Nov 2026: salin minggu lalu pernah tertekan tanpa sengaja dan menimpa jadwal yang sudah dibuat. Sekarang minta konfirmasi + bisa dibatalkan. */
+  confirmBox("Salin jadwal minggu lalu?", `Jadwal ${fd(addDays(ws, -7))}–${fd(addDays(ws, -1))} akan disalin ke ${fd(ws)}–${fd(addDays(ws, 6))}.${filled ? ` ${filled} hari di minggu ini SUDAH TERISI dan akan ditimpa.` : ""}`, filled ? "Timpa jadwal" : "Salin", async () => {
+    const ok = await guard(async () => { for (const [mo, plan] of Object.entries(patch)) await mergeDoc("shift/" + mo, {plan}, {month: mo}); });
+    if (ok) { S.ui.copyUndo = {ws, prev}; toast("Jadwal minggu lalu disalin. Tekan \"Batalkan salin\" kalau keliru."); render(); }
+  });
+}
+async function undoCopyWeek() {
+  const u = S.ui.copyUndo; if (!u) return;
+  const byMo = {}; for (const [d, p] of Object.entries(u.prev)) (byMo[d.slice(0, 7)] ||= {})[d] = p;
+  const ok = await guard(async () => { for (const [mo, days] of Object.entries(byMo)) {
+    const cur = structuredClone(S.shifts.find(x => x.month === mo) || {month: mo, plan: {}}); delete cur.id; cur.plan ||= {};
+    for (const [d, p] of Object.entries(days)) { if (Object.keys(p).length) cur.plan[d] = p; else delete cur.plan[d]; }
+    await S.db.doc("shift/" + mo).set(cur); } });
+  if (ok) { S.ui.copyUndo = null; toast("Salin jadwal dibatalkan, jadwal kembali seperti sebelumnya."); render(); }
 }
 /* rekap absensi satu staf dalam sebulan, sesuai SOP: toleransi 5 menit/shift, akumulasi bulanan */
 function attStats(mo, sid) {
@@ -3408,6 +3421,7 @@ async function loadTg() { try { S.tg = await callFn("notify", {action: "status"}
 const ACT2 = {
   wk: b => { S.ui.wk = addDays(S.ui.wk || weekStart(today()), +b.dataset.v); render(); },
   copyWeek: () => copyWeek(),
+  undoCopyWeek: () => undoCopyWeek(),
   payPeopleSave: () => savePayPeople(),
   salEdit: b => modalSalary(b.dataset.id),
   payDetail: b => modalPayDetail(b.dataset.id),
