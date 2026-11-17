@@ -842,7 +842,7 @@ function myAttChip() {
   if (!a.out) return `<span class="chip ok">Masuk ${ftime(a.in.ts)}</span>`;
   return `<span class="chip">${ftime(a.in.ts)}–${ftime(a.out.ts)}</span>`;
 }
-const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
+const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], opnameArea: ["Opname area", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
 const whoName = id => id === "import" ? "Impor Excel" : S.staff[id]?.name || "-";
 const movesOf = m => Object.entries(m.list || {}).map(([k, v]) => ({...v, _k: k, _d: m.date}));
 /* 13 Nov 2026: Owner/Manager bisa membetulkan mutasi stok yang salah input (jenis, jumlah) atau menghapusnya. */
@@ -909,7 +909,7 @@ function viewStock() {
   const recent = S.moves.slice(0, 3).flatMap(movesOf).sort((a, b) => b.ts - a.ts).slice(0, 25);
   if (!itemsArr().length) return `<div class="pagehead"><h1>Stok</h1></div><div class="empty"><b>Belum ada bahan</b><span>Daftarkan bahan baku dulu di Menu → Bahan baku & harga, lengkap dengan satuan, minimum stok, dan harga per satuan.</span>${isMgr() ? `<button class="btn pri" data-act="goMenu" data-v="bahan">Buka bahan baku</button>` : ""}</div>`;
   return `<div class="pagehead"><div><div class="eyebrow">Nilai stok · ${rpk(value)}</div><h1>Stok</h1></div>
-    <div class="row">${canIn ? `<button class="btn pri" data-act="move" data-k="in">Barang masuk</button><button class="btn" data-act="move" data-k="opname">Opname gudang</button>` : ""}${canTake ? `${parPreset().length ? `<button class="btn" data-act="takePar">Isi area sampai par (${parPreset().length})</button>` : ""}<button class="btn ${canIn ? "" : "pri"}" data-act="move" data-k="take">Ambil dari gudang</button><button class="btn" data-act="move" data-k="inArea">Masuk ke area</button><button class="btn" data-act="move" data-k="ret">Retur ke gudang</button>${r !== "gudang" && prepItems().length ? `<button class="btn" data-act="prod">Produksi batch</button>` : ""}` : ""}</div></div>
+    <div class="row">${canIn ? `<button class="btn pri" data-act="move" data-k="in">Barang masuk</button><button class="btn" data-act="move" data-k="opname">Opname gudang</button>` : ""}${opAreas().length ? `<button class="btn" data-act="opPick">Opname area</button>` : ""}${canTake ? `${parPreset().length ? `<button class="btn" data-act="takePar">Isi area sampai par (${parPreset().length})</button>` : ""}<button class="btn ${canIn ? "" : "pri"}" data-act="move" data-k="take">Ambil dari gudang</button><button class="btn" data-act="move" data-k="inArea">Masuk ke area</button><button class="btn" data-act="move" data-k="ret">Retur ke gudang</button>${r !== "gudang" && prepItems().length ? `<button class="btn" data-act="prod">Produksi batch</button>` : ""}` : ""}</div></div>
   <section class="panel">
     <div class="row"><div style="flex:1 1 200px"><input id="f-q" data-ui="q" value="${esc(u.q)}" placeholder="Cari bahan…" aria-label="Cari bahan"></div>
       <select id="f-cat" data-ui="cat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${cats.map(c => `<option ${u.cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
@@ -922,6 +922,7 @@ function viewStock() {
       <td style="min-width:110px">${min ? `<div class="bar ${st[0] !== "aman" ? "low" : ""}"><i style="width:${Math.max(2, w)}%"></i></div><span class="small muted">min ${fq(min)}</span>` : `<span class="small muted">Minimum belum diatur</span>`}</td>
       <td>${min ? `<span class="chip ${st[1]}">${st[2]}</span>` : `<span class="chip">Atur min</span>`}</td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Tidak ada bahan yang cocok.</td></tr>`}
     </tbody></table></div></section>
+  ${opnamePanel()}
   ${mutasiPanel()}`;
 }
 function itemOptions(sel, area) {
@@ -1077,7 +1078,7 @@ function viewClosing() {
   const t = bizDay(), cl = S.closings.find(c => c.date === t);
   const areas = role() === "kitchen" ? ["kitchen"] : role() === "headbar" ? ["bar", "kitchen"] : ["bar", "kitchen"];
   const hist = S.closings.slice(0, 14);
-  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Closing harian</h1></div><div class="row"><button class="btn" data-act="waste">Catat waste</button></div></div>
+  return `<div class="pagehead"><div><div class="eyebrow">${fdate(t)}</div><h1>Closing harian</h1></div><div class="row">${opAreas().length ? `<button class="btn" data-act="opPick">Opname area</button>` : ""}<button class="btn" data-act="waste">Catat waste</button></div></div>
   <div class="grid2">${areas.map(a => { const sh = cl?.shifts?.[a];
     if (sh) { const sp = Object.entries(sh.lines || {}).reduce((s, [id, l]) => s + (l.spoil || 0) * itemCost(id), 0);
       return `<section class="panel"><div class="panel-h"><h2>${AREAS[a]}</h2><span class="chip ok">Selesai ${ftime(sh.ts)}</span></div><div class="small muted">Oleh ${esc(S.staff[sh.by]?.name || (sh.by === "import" ? "impor Excel" : "-"))} · spoil ${rp(sp)}</div>${closingSummary(sh)}</section>`; }
@@ -1126,7 +1127,7 @@ function modalClosing(a) {
   restoreDraft($("#modal form[data-submit=closing]")); document.querySelectorAll("#modal input[data-sysv]").forEach(clCheck);
 }
 /* ===== Draf closing otomatis (2 Nov 2026): isian tersimpan di HP setiap diketik, pulih bila aplikasi tertutup/crash ===== */
-const draftKey = f => f && f.dataset.submit === "closing" ? "rouna_draft_closing_" + (f.dataset.d || bizDay()) + "_" + f.dataset.a + "_" + S.me : null;
+const draftKey = f => f && ["closing", "opArea"].includes(f.dataset.submit) ? "rouna_draft_" + f.dataset.submit + "_" + (f.dataset.d || bizDay()) + "_" + f.dataset.a + "_" + S.me : null;
 function saveDraft(f) {
   const k = draftKey(f); if (!k) return; const v = {};
   [...f.elements].forEach(el => { if (el.name && el.value !== "" && el.type !== "submit") v[el.name] = el.value; });
@@ -1134,9 +1135,9 @@ function saveDraft(f) {
 }
 function restoreDraft(f) {
   const k = draftKey(f); if (!k) return; let d = null; try { d = JSON.parse(lsGet(k) || "null"); } catch (e) {}
-  const box = f.querySelector("#cl-draft"); if (!d || !d.v) { if (box) box.innerHTML = `<div class="small muted">Isian tersimpan otomatis di HP ini setiap kamu mengetik. Jika aplikasi tertutup, buka lagi closing untuk melanjutkan.</div>`; return; }
+  const box = f.querySelector("#cl-draft"); if (!d || !d.v) { if (box) box.innerHTML = `<div class="small muted">Isian tersimpan otomatis di HP ini setiap kamu mengetik. Jika aplikasi tertutup, buka lagi ${f.dataset.submit === "opArea" ? "opname" : "closing"} untuk melanjutkan.</div>`; return; }
   let n = 0; Object.entries(d.v).forEach(([name, val]) => { const el = f.elements[name]; if (el) { el.value = val; if (/^s_/.test(name)) n++; } });
-  if (box) box.innerHTML = `<div class="alert ok"><div class="grow small"><b>Draf closing dipulihkan</b> · ${n} bahan sudah terisi, tersimpan ${ftime(d.at)}. Lanjutkan dari yang belum diisi.</div><button type="button" class="btn sm ghost" data-act="draftClear">Mulai dari awal</button></div>`;
+  if (box) box.innerHTML = `<div class="alert ok"><div class="grow small"><b>Draf ${f.dataset.submit === "opArea" ? "opname" : "closing"} dipulihkan</b> · ${n} bahan sudah terisi, tersimpan ${ftime(d.at)}. Lanjutkan dari yang belum diisi.</div><button type="button" class="btn sm ghost" data-act="draftClear">Mulai dari awal</button></div>`;
 }
 document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("form[data-submit=closing]"); if (f) { saveDraft(f); clCheck(e.target); } });
 /* peringatan langsung per baris closing (6 Nov 2026) */
@@ -1176,6 +1177,124 @@ async function submitClosing(form) {
     await logMoves(spoilLog);
   });
   if (ok) { lsSet(draftKey(form), null); closeModal(); toast("Closing " + AREAS[a] + " tersimpan."); } else { btn.disabled = false; btn.textContent = "Kirim laporan closing"; }
+}
+
+/* ===== Opname area Bar & Kitchen (17 Nov 2026) =====
+   Hitung fisik stok di area (bukan gudang) di luar closing harian, mis. seminggu sekali atau saat cek mendadak.
+   Selisih dicatat sebagai "Opname area" (bukan pemakaian), jadi kehilangan/kelebihan terlihat terpisah dari pemakaian closing.
+   Bahan yang dikosongkan = tidak dihitung, stoknya tidak diubah. Tersimpan di moves/{tgl}: t "opnameArea", qty = fisik − sistem, sys, fisik, area, ses, cost. */
+const opAreas = () => { const r = role(); return r === "kitchen" ? ["kitchen"] : ["manager", "finance", "headbar"].includes(r) ? ["bar", "kitchen"] : []; };
+function opSessions() {
+  const g = {};
+  S.moves.forEach(m => Object.entries(m.list || {}).forEach(([k, e]) => { if (e.t !== "opnameArea" || e.void) return;
+    const s = (g[e.ses || m.date + e.area] ||= {ses: e.ses, date: m.date, area: e.area, by: e.by, ts: e.ts || 0, full: e.full, lines: []});
+    s.lines.push({...e, _k: k}); if ((e.ts || 0) > s.ts) s.ts = e.ts; }));
+  return Object.values(g).map(s => { let minus = 0, plus = 0, nDiff = 0;
+    s.lines.forEach(l => { const v = (+l.qty || 0) * (l.cost ?? itemCost(l.itemId)); if (Math.abs(+l.qty || 0) > .001) nDiff++; if (v < 0) minus += -v; else plus += v; });
+    return {...s, minus, plus, nDiff}; }).sort((a, b) => b.ts - a.ts);
+}
+const opLast = a => opSessions().find(s => s.area === a);
+function opAgo(ts) { const d = Math.floor((Date.now() - ts) / 864e5); return d <= 0 ? "hari ini" : d === 1 ? "kemarin" : d + " hari lalu"; }
+function modalOpPick() {
+  const A = opAreas(); if (!A.length) return toast("Opname area dilakukan oleh Manager, Finance, Headbar, atau Kitchen.");
+  if (A.length === 1) return modalOpArea(A[0]);
+  openModal(`<div class="modal" role="dialog" aria-label="Opname area"><div class="modal-h"><h2>Opname area</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p class="small muted" style="margin:0">Hitung fisik semua bahan di area, lalu sistem mencatat selisihnya terhadap stok sistem. Ini terpisah dari closing harian, jadi selisihnya tidak dihitung sebagai pemakaian.</p>
+    <div class="grid2">${A.map(a => { const l = opLast(a), n = itemsArr().filter(i => i.area === a).length;
+      return `<section class="panel"><div class="panel-h"><h2>${AREAS[a]}</h2><span class="chip ${!l ? "warn" : Date.now() - l.ts > 7 * 864e5 ? "warn" : "ok"}">${l ? "Terakhir " + opAgo(l.ts) : "Belum pernah"}</span></div><div class="small muted">${n} bahan</div><button class="btn pri" data-act="opArea" data-a="${a}" ${n ? "" : "disabled"}>Mulai opname ${AREAS[a]}</button></section>`; }).join("")}</div></div>`);
+}
+function modalOpArea(a) {
+  if (!opAreas().includes(a)) return toast("Kamu tidak bisa opname area ini.");
+  const items = itemsArr().filter(i => i.area === a), cc = canCost(), groups = {};
+  items.forEach(i => (groups[i.category || "Lainnya"] ||= []).push(i));
+  const d = today(), cols = cc ? 5 : 4;
+  openModal(`<form data-submit="opArea" data-a="${a}" data-d="${d}" class="modal wide" role="dialog" aria-label="Opname ${AREAS[a]}">
+    <div class="modal-h"><h2>Opname ${AREAS[a]} · ${fdate(d)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p class="small muted" style="margin:0">Isi jumlah <b>fisik</b> hasil hitung di ${AREAS[a].toLowerCase()}, dalam satuan sistem. Bahan yang dikosongkan dianggap <b>tidak dihitung</b> dan stoknya tidak diubah. Isi 0 bila habis.</p>
+    <div id="cl-draft"></div>
+    <div class="row"><div style="flex:1 1 200px"><input id="op-q" placeholder="Cari bahan…" aria-label="Cari bahan" autocomplete="off"></div><div class="small" id="op-sum"></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Sistem</th><th>Fisik</th><th class="r">Selisih</th>${cc ? `<th class="r">Nilai</th>` : ""}</tr></thead><tbody>
+    ${Object.entries(groups).map(([g, arr]) => `<tr class="op-g"><td colspan="${cols}" class="small muted"><b>${esc(g)}</b></td></tr>` + arr.map(i => { const sys = +stockOf(i.id).area || 0;
+      return `<tr data-op="${i.id}" data-n="${esc(norm(i.name))}" data-unit="${esc(i.unit)}" data-cost="${cc ? itemCost(i.id) : 0}"><td><b>${esc(i.name)}</b><span class="sub">${esc(i.unit)}</span><span class="sub op-warn" style="color:var(--crit)"></span></td>
+        <td class="r num">${fq(sys)}</td><td><input name="s_${i.id}" type="number" step="any" min="0" inputmode="decimal" style="width:96px" data-sysv="${sys}" aria-label="Fisik ${esc(i.name)}"></td>
+        <td class="r num op-d"></td>${cc ? `<td class="r num op-v"></td>` : ""}</tr>`; }).join("")).join("")}
+    </tbody></table></div>
+    <label class="f">Catatan opname<textarea name="note" rows="2" maxlength="300" placeholder="mis. opname mingguan, dihitung berdua dengan Finance"></textarea></label>
+    <div class="foot"><button type="button" class="btn" data-act="close">Tutup (draf tersimpan)</button><button class="btn pri" type="submit">Simpan opname</button></div></form>`);
+  const f = $("#modal form[data-submit=opArea]"); restoreDraft(f); opCalc(f);
+}
+function opWarn(tr) {
+  const inp = tr.querySelector("input[data-sysv]"); if (!inp || inp.value === "") return "";
+  const sys = +inp.dataset.sysv || 0, fis = num(inp.value), u = tr.dataset.unit || "", diff = fis - sys;
+  if (/^(g|gr|gram|ml)$/i.test(u) && sys >= 200 && fis > 0 && fis < Math.min(50, sys * .05)) return `Fisik ${fq(fis)} ${u}? Sepertinya diisi dalam kg/liter. Isi dalam ${u}.`;
+  if (sys > 0 && Math.abs(diff) > sys * .5 && Math.abs(diff) > 1) return `Selisih ${diff > 0 ? "+" : "−"}${fqu(Math.abs(diff), u)} (lebih dari separuh stok sistem). Cek hitungan.`;
+  if (sys <= 0 && fis > 0) return "Stok sistem kosong. Ada barang masuk ke area yang belum dicatat?";
+  return "";
+}
+function opCalc(f) {
+  if (!f) return; let n = 0, nDiff = 0, minus = 0, plus = 0; const rows = [...f.querySelectorAll("tr[data-op]")];
+  rows.forEach(tr => { const inp = tr.querySelector("input"), dCell = tr.querySelector(".op-d"), vCell = tr.querySelector(".op-v"), w = tr.querySelector(".op-warn");
+    if (inp.value === "") { dCell.textContent = ""; if (vCell) vCell.textContent = ""; w.textContent = ""; return; }
+    n++; const diff = Math.round((num(inp.value) - (+inp.dataset.sysv || 0)) * 1000) / 1000, v = diff * (+tr.dataset.cost || 0);
+    if (Math.abs(diff) > .001) nDiff++; if (v < 0) minus -= v; else plus += v;
+    dCell.innerHTML = Math.abs(diff) <= .001 ? `<span class="chip ok">Sesuai</span>` : `<span style="color:${diff < 0 ? "var(--crit)" : "inherit"}">${diff > 0 ? "+" : "−"}${fqu(Math.abs(diff), tr.dataset.unit)}</span>`;
+    if (vCell) vCell.innerHTML = Math.abs(v) >= 1 ? `<span style="color:${v < 0 ? "var(--crit)" : "inherit"}">${v < 0 ? "−" : "+"}${rp(Math.abs(v))}</span>` : "";
+    const t = opWarn(tr); w.textContent = t ? " " + t : ""; });
+  const box = f.querySelector("#op-sum"); if (box) box.innerHTML = `Dihitung <b>${n}/${rows.length}</b> · selisih ${nDiff} bahan${canCost() && (minus || plus) ? ` · kurang <b style="color:var(--crit)">${rp(minus)}</b> · lebih ${rp(plus)}` : ""}`;
+}
+function opFilter(f) { const q = norm(f.querySelector("#op-q").value);
+  f.querySelectorAll("tr[data-op]").forEach(tr => tr.hidden = !!q && !tr.dataset.n.includes(q));
+  f.querySelectorAll("tr.op-g").forEach(g => { let t = g.nextElementSibling, any = false; while (t && !t.classList.contains("op-g")) { if (!t.hidden) any = true; t = t.nextElementSibling; } g.hidden = !any; }); }
+document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("form[data-submit=opArea]"); if (!f) return; if (e.target.id === "op-q") return opFilter(f); saveDraft(f); opCalc(f); });
+async function submitOpArea(form) {
+  const a = form.dataset.a; if (!opAreas().includes(a)) return toast("Kamu tidak bisa opname area ini.");
+  const items = itemsArr().filter(i => i.area === a), cnt = items.filter(i => form["s_" + i.id] && form["s_" + i.id].value !== "");
+  if (!cnt.length) return toast("Isi jumlah fisik minimal satu bahan.");
+  const warns = [...form.querySelectorAll("tr[data-op]")].filter(tr => opWarn(tr)), skip = items.length - cnt.length, sig = warns.length + "/" + skip;
+  if ((warns.length || skip) && form.dataset.warnok !== sig) { form.dataset.warnok = sig;
+    if (warns.length) { const q = form.querySelector("#op-q"); if (q.value) { q.value = ""; opFilter(form); } warns[0].scrollIntoView({block: "center"}); }
+    return toast([warns.length ? `${warns.length} bahan perlu dicek (tulisan merah).` : "", skip ? `${skip} bahan belum dihitung dan stoknya tidak akan diubah.` : "", "Tekan Simpan lagi bila sudah benar."].filter(Boolean).join(" ")); }
+  const note = form.note.value.trim(), ses = uid(), full = !skip, setA = {}, log = [];
+  for (const i of cnt) { const sys = +stockOf(i.id).area || 0, fis = num(form["s_" + i.id].value), diff = Math.round((fis - sys) * 1000) / 1000;
+    setA[i.id] = fis; log.push({t: "opnameArea", itemId: i.id, qty: diff, area: a, sys, fisik: fis, ses, full, cost: itemCost(i.id), note: (note ? note + " · " : "") + "fisik " + fq(fis) + " · sistem " + fq(sys)}); }
+  const btn = form.querySelector("[type=submit]"); btn.disabled = true; btn.textContent = "Menyimpan…";
+  const ok = await guard(async () => {
+    const {error} = await SB.rpc("stock_set_area_many", {p: setA}); if (error) throw dbError(error);
+    cnt.forEach(i => S.stock[i.id] = {...stockOf(i.id), area: setA[i.id]}); S.db.bump("stock");
+    await logMoves(log);
+  });
+  if (ok) { lsSet(draftKey(form), null); closeModal(); const n = log.filter(l => Math.abs(l.qty) > .001).length; toast(`Opname ${AREAS[a]} tersimpan. ${n ? n + " bahan ada selisih." : "Semua sesuai sistem."}`); }
+  else { btn.disabled = false; btn.textContent = "Simpan opname"; }
+}
+function opnamePanel() {
+  const A = opAreas(), list = opSessions(), cc = canCost();
+  if (!A.length && !list.length) return "";
+  const last = Object.keys(AREAS).map(a => { const l = list.find(s => s.area === a); return `<span class="chip ${!l || Date.now() - l.ts > 7 * 864e5 ? "warn" : "ok"}">${AREAS[a]}: ${l ? opAgo(l.ts) : "belum pernah"}</span>`; }).join(" ");
+  return `<section class="panel"><div class="panel-h"><div><h2>Opname area</h2><span class="small muted">Hitung fisik stok di bar dan kitchen, sebaiknya seminggu sekali. Selisihnya dicatat terpisah dari pemakaian closing.</span></div>
+    <div class="row">${last}${A.length ? `<button class="btn sm pri" data-act="opPick">Mulai opname</button>` : ""}</div></div>
+    ${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Waktu</th><th>Area</th><th>Oleh</th><th class="r">Dihitung</th><th class="r">Ada selisih</th>${cc ? `<th class="r">Kurang (Rp)</th><th class="r">Lebih (Rp)</th>` : ""}<th></th></tr></thead><tbody>
+    ${list.slice(0, 20).map(s => `<tr><td class="num">${fdt(s.ts)}</td><td>${AREAS[s.area] || "-"}</td><td>${esc(whoName(s.by))}</td><td class="r num">${s.lines.length}${s.full ? "" : ` <span class="chip">sebagian</span>`}</td><td class="r num">${s.nDiff}</td>${cc ? `<td class="r num" style="color:${s.minus ? "var(--crit)" : "inherit"}">${s.minus ? rp(s.minus) : "-"}</td><td class="r num">${s.plus ? rp(s.plus) : "-"}</td>` : ""}<td><button class="btn sm" data-act="opView" data-s="${esc(s.ses || "")}" data-d="${s.date}" data-a="${s.area}">Detail</button></td></tr>`).join("")}</tbody></table></div>`
+    : `<div class="small muted">Belum ada opname area dalam 45 hari terakhir.</div>`}</section>`;
+}
+function modalOpView(ses, d, a) {
+  const s = opSessions().find(x => ses ? x.ses === ses : x.date === d && x.area === a); if (!s) return toast("Data opname tidak ditemukan.");
+  const cc = canCost(), rows = s.lines.map(l => ({...l, v: (+l.qty || 0) * (l.cost ?? itemCost(l.itemId))})).sort((x, y) => (Math.abs(y.v) - Math.abs(x.v)) || (Math.abs(y.qty) - Math.abs(x.qty)));
+  const note = String(s.lines[0]?.note || "").split(" · fisik ")[0];
+  openModal(`<div class="modal wide" role="dialog" aria-label="Detail opname"><div class="modal-h"><div><div class="eyebrow">${fdt(s.ts)} · oleh ${esc(whoName(s.by))}</div><h2>Opname ${AREAS[s.area] || ""}</h2></div><div class="row">${S.dl ? `<button class="btn sm" data-act="opCsv" data-s="${esc(s.ses || "")}" data-d="${s.date}" data-a="${s.area}">Unduh CSV</button>` : ""}<button type="button" class="btn sm ghost" data-act="close">Tutup</button></div></div>
+    <div class="grid3"><div class="kpi"><span class="eyebrow">Dihitung</span><span class="v">${s.lines.length}</span><span class="small muted">${s.full ? "semua bahan area" : "sebagian bahan"}</span></div><div class="kpi"><span class="eyebrow">Ada selisih</span><span class="v">${s.nDiff}</span></div>
+    ${cc ? `<div class="kpi"><span class="eyebrow">Selisih bersih</span><span class="v" style="color:${s.plus - s.minus < 0 ? "var(--crit)" : "inherit"}">${s.plus - s.minus < 0 ? "−" : ""}${rp(Math.abs(s.plus - s.minus))}</span><span class="small muted">kurang ${rp(s.minus)} · lebih ${rp(s.plus)}</span></div>` : ""}</div>
+    ${note && !/^fisik /.test(note) ? `<div class="small">Catatan: ${esc(note)}</div>` : ""}
+    <div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Sistem</th><th class="r">Fisik</th><th class="r">Selisih</th>${cc ? `<th class="r">Nilai</th>` : ""}</tr></thead><tbody>
+    ${rows.map(l => { const it = S.items[l.itemId] || {}, z = Math.abs(+l.qty || 0) <= .001; return `<tr><td>${esc(it.name || "Bahan dihapus")}<span class="sub">${esc(it.unit || "")}</span></td><td class="r num">${fq(l.sys)}</td><td class="r num">${fq(l.fisik)}</td>
+      <td class="r num">${z ? `<span class="chip ok">Sesuai</span>` : `<span style="color:${l.qty < 0 ? "var(--crit)" : "inherit"}">${l.qty > 0 ? "+" : "−"}${fqu(Math.abs(l.qty), it.unit)}</span>`}</td>${cc ? `<td class="r num">${z ? "" : (l.v < 0 ? "−" : "+") + rp(Math.abs(l.v))}</td>` : ""}</tr>`; }).join("")}</tbody></table></div>
+    <p class="small muted" style="margin:0">Selisih minus = fisik lebih sedikit dari sistem (kemungkinan pemakaian tidak tercatat, terbuang, atau hilang). Plus = ada barang masuk ke area yang belum dicatat.</p></div>`);
+}
+function opCsv(ses, d, a) {
+  const s = opSessions().find(x => ses ? x.ses === ses : x.date === d && x.area === a); if (!s || !S.dl) return;
+  const cc = canCost(), q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = ["Bahan", "Satuan", "Sistem", "Fisik", "Selisih", ...(cc ? ["Harga/satuan", "Nilai selisih"] : [])];
+  const body = s.lines.map(l => { const it = S.items[l.itemId] || {}, c = l.cost ?? itemCost(l.itemId); return [it.name || l.itemId, it.unit || "", l.sys, l.fisik, l.qty, ...(cc ? [Math.round(c * 100) / 100, Math.round(l.qty * c)] : [])].map(q).join(","); });
+  S.dl.save({filename: `opname-${s.area}-${s.date}.csv`, data: "﻿" + [head.map(q).join(","), ...body].join("\n")});
 }
 
 /* ---------- SALES (Olsera) ---------- */
@@ -4581,7 +4700,8 @@ const ACT = {
   closing: b => { const a = b.dataset.a || (role() === "kitchen" ? "kitchen" : "bar"); if (S.closings.find(c => c.date === today())?.shifts?.[a]) { S.view = "closing"; render(); return toast("Closing " + AREAS[a] + " hari ini sudah dikirim."); } modalClosing(a); },
   copySys: () => { let n = 0, skip = 0; document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value !== "") return; const ex = +i.closest("tr")?.dataset.exp || 0; if (ex > 0) { skip++; return; } i.value = i.dataset.sysv; n++; clCheck(i); });
     saveDraft($("#modal form[data-submit=closing]")); toast(`${n} bahan disalin.${skip ? ` ${skip} bahan yang terpakai belum diisi, hitung fisik dulu.` : ""}`); },
-  draftClear: () => { const f = $("#modal form[data-submit=closing]"); if (!f) return; lsSet(draftKey(f), null); f.reset(); restoreDraft(f); toast("Draf dihapus."); },
+  draftClear: () => { const f = $("#modal form[data-submit=closing]") || $("#modal form[data-submit=opArea]"); if (!f) return; lsSet(draftKey(f), null); f.reset(); restoreDraft(f); if (f.dataset.submit === "opArea") opCalc(f); toast("Draf dihapus."); },
+  opPick: () => modalOpPick(), opArea: b => modalOpArea(b.dataset.a), opView: b => modalOpView(b.dataset.s, b.dataset.d, b.dataset.a), opCsv: b => opCsv(b.dataset.s, b.dataset.d, b.dataset.a),
   addLine: b => { const k = b.dataset.k; $("#lines").insertAdjacentHTML("beforeend", lineRow("", "", null, k === "in" ? `<input name="price" type="number" step="any" min="0" placeholder="Rp/satuan" aria-label="Harga per satuan" style="display:${$("#mv-price")?.checked ? "block" : "none"}">` : "")); fixInLines(); },
   rmLine: b => { const l = b.closest(".line"); if (document.querySelectorAll("#lines .line").length > 1) l.remove(); else { l.querySelector("select").value = ""; l.querySelector("input").value = ""; } },
   togglePrice: () => fixInLines(),
@@ -4696,7 +4816,7 @@ document.addEventListener("change", e => { if (e.target.id === "restore-file" &&
 const SUBMIT = {
   spIssue: submitSpIssue,
   mvEdit: submitMvEdit,
-  daily: submitDaily, move: submitMove, order: submitOrder, recv: submitRecv, closing: submitClosing, import: submitImport, absen: submitAbsen, item: submitItem, recipe: submitRecipe, staff: submitStaff, voucher: submitVoucher, waste: submitWaste, prep: submitPrep, prod: submitProd, expense: submitExpense, cash: submitCash, pay: submitPay, sop: submitSop, calib: submitCalib, sopSet: submitSopSet,
+  daily: submitDaily, move: submitMove, order: submitOrder, recv: submitRecv, closing: submitClosing, opArea: submitOpArea, import: submitImport, absen: submitAbsen, item: submitItem, recipe: submitRecipe, staff: submitStaff, voucher: submitVoucher, waste: submitWaste, prep: submitPrep, prod: submitProd, expense: submitExpense, cash: submitCash, pay: submitPay, sop: submitSop, calib: submitCalib, sopSet: submitSopSet,
   place: async f => { if (await guard(() => S.db.doc("orders/" + f.dataset.id).update({status: "dipesan", supplier: f.supplier.value.trim(), eta: f.eta.value, orderedAt: Date.now(), orderedBy: S.me}))) { closeModal(); toast("Order ditandai sudah dipesan."); } },
   fcSet: async f => { if (await guard(() => mergeDoc("settings/app", {fc: Math.min(80, Math.max(10, num(f.fc.value) || 30)), fcMin: Math.min(80, num(f.fcMin.value)) || 0, fcMak: Math.min(80, num(f.fcMak.value)) || 0}, {}))) { closeModal(); toast("Target food cost tersimpan."); } },
   general: async f => { if (await guard(() => mergeDoc("settings/app", {outlet: f.outlet.value.trim() || "Coffee Rouna", voucher: Math.max(0, num(f.voucher.value)) || 350000, wt: Math.min(20, Math.max(.5, num(f.wt.value) || 2)), share: Math.min(99, Math.max(1, num(f.share.value) || 40))}, {}))) toast("Tersimpan."); },
@@ -4757,7 +4877,7 @@ document.addEventListener("submit", async e => { const f = e.target.closest("for
 
 document.body.classList.toggle("hints", S.hints);
 boot().catch(e => { console.error(e); renderNoDb(); });
-const BUILD = "20261017161651";
+const BUILD = "20261117150000";
 async function checkUpdate() {
   try { const t = await (await fetch(location.pathname + "?u=" + Date.now(), {cache: "no-store"})).text();
     if (t.includes('const BUILD = "') && !t.includes('const BUILD = "' + BUILD + '"')) showUpdate(); } catch (e) {}
