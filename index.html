@@ -327,6 +327,7 @@ const NAV = [
   ["menu", "Menu", ["manager", "finance", "headbar", "kitchen", "crew"]],
   ["sales", "Penjualan", ["manager", "finance", "headbar"]],
   ["analitik", "Analitik", ["manager", "finance"]],
+  ["member", "Member", ["manager", "finance"]],
   ["keuangan", "Keuangan", ["manager", "finance"]],
   ["sop", "SOP", ["manager", "finance", "headbar", "kitchen", "gudang", "crew"]],
   ["absen", "Tim", ["manager", "finance", "headbar", "gudang", "kitchen", "crew"]],
@@ -337,7 +338,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  hints: lsGet("rouna_hints") === "1", shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", members: [], shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], olsmonth: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -550,6 +551,7 @@ async function startData(session) {
   subscribe(S.db.collection("shift").orderBy("month", "desc").limit(4), "shifts", listColl("shifts"));
   if (["owner", "manager", "headbar", "finance"].includes(r0.data)) subscribe(S.db.collection("requests").orderBy("ts", "desc").limit(400), "requests", listColl("requests"));
   if (["owner", "manager", "finance", "headbar"].includes(r0.data)) subscribe(S.db.collection("sp"), "sp", mapColl("sp"));
+  if (["owner", "manager", "finance"].includes(r0.data)) subscribe(S.db.collection("members").orderBy("month", "desc").limit(13), "members", listColl("members"));
   if (["owner", "manager", "finance"].includes(r0.data)) { subscribe(S.db.collection("hrprofile"), "hrprofile", mapColl("hrprofile")); subscribe(S.db.collection("perf").orderBy("month", "desc").limit(12), "perf", listColl("perf")); }
   subscribe(S.db.collection("training"), "training", mapColl("training"));
   subscribe(S.db.collection("logbook").orderBy("date", "desc").limit(30), "logbook", listColl("logbook"));
@@ -564,6 +566,7 @@ const ICON = {
   menu: '<path d="M5 9h12v5a6 6 0 0 1-12 0z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/>',
   sales: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   analitik: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
+  member: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.7c2 .7 3.2 2.5 3.5 5.3"/>',
   keuangan: '<rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10h19M7 15h3"/>',
   sop: '<path d="M5 3h10l4 4v14H5z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   absen: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
@@ -587,7 +590,7 @@ function render() {
   if (!allowed.find(n => n[0] === S.view)) S.view = (role() === "crew" && allowed.find(n => n[0] === "absen")) ? "absen" : allowed[0][0];
   const low = lowItems().length;
   const navBtn = (n, cls) => `<button data-act="nav" data-v="${n[0]}" ${S.view === n[0] ? 'aria-current="page"' : ""}>${cls === "side" ? `<span class="nl">${ico(n[0])}${n[1]}</span>` : ico(n[0]) + `<span>${n[1]}</span>`}${n[0] === "stok" && low ? `<span class="badge">${low}</span>` : ""}${n[0] === "order" && pendingForMe() ? `<span class="badge">${pendingForMe()}</span>` : ""}${n[0] === "sop" && S.docs.filter(d => docOk(d) && !docAck(d)).length ? `<span class="badge">${S.docs.filter(d => docOk(d) && !docAck(d)).length}</span>` : ""}</button>`;
-  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, sales: viewSales, analitik: viewAnalytics, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
+  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, sales: viewSales, analitik: viewAnalytics, member: viewMember, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
   $("#app").innerHTML = `<div class="shell">
     <nav class="side" aria-label="Menu"><div class="brand">${WM}<span class="os">OS</span></div>${allowed.map(n => navBtn(n, "side")).join("")}</nav>
     <div style="min-width:0">
@@ -1784,6 +1787,146 @@ function dailySection(D) {
       <div class="row">${Object.entries(D.pay).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="chip">${esc(k)} ${pct(v / payT)}</span>`).join("")}${Object.entries(D.ch).map(([k, v]) => `<span class="chip acc">${esc(k)} ${rpk(v)}</span>`).join("")}</div></section>
   </div>`;
 }
+/* ===== Member: impor "Daftar Pelanggan" Olsera (xlsx) tiap akhir bulan + analisa. 19 Nov 2026 =====
+   Disimpan per bulan di col members/<YYYY-MM> sebagai snapshot. Baris ringkas (array) supaya dokumen kecil:
+   [id, nama, gender, hp, tgl lahir, tipe, tgl gabung, transaksi terakhir, poin, deposit, nonaktif] */
+const MI = {id: 0, n: 1, g: 2, ph: 3, bd: 4, type: 5, join: 6, last: 7, pts: 8, dep: 9, na: 10};
+const MB_COLS = {id: "id", n: "name", g: "gender", ph: "phone", bd: "birth date", type: "customer type", join: "join date", last: "last transaction date", pts: "loyalty points", dep: "deposit", na: "non active"};
+const canMember = () => ["owner", "manager", "finance"].includes(realRole());
+let MBUP = null;
+function mbDate(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date) { const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())} ${p(v.getHours())}:${p(v.getMinutes())}`; }
+  if (typeof v === "number") return mbDate(new Date(Math.round((v - 25569) * 864e5) + new Date().getTimezoneOffset() * 6e4));
+  const s = String(v).trim(), m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (m) return m[4] ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : `${m[1]}-${m[2]}-${m[3]}`;
+  const d = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (d) { const p = n => String(n).padStart(2, "0"); return `${d[3]}-${p(d[2])}-${p(d[1])}` + (d[4] ? ` ${p(d[4])}:${d[5]}` : ""); }
+  return "";
+}
+async function onMemberFile(file) {
+  if (!window.XLSX) return toast("Pembaca Excel belum termuat. Muat ulang halaman.");
+  let A;
+  try { const wb = XLSX.read(await file.arrayBuffer(), {type: "array", cellDates: true}); A = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, raw: true, defval: ""}); }
+  catch (e) { return toast("File tidak bisa dibaca. Unggah file Excel Daftar Pelanggan dari Olsera."); }
+  const hi = A.findIndex(r => r.some(c => /^loyalty points$/i.test(String(c).trim())) && r.some(c => /^name$/i.test(String(c).trim())));
+  if (hi < 0) return toast("Ini bukan Daftar Pelanggan dari Olsera (kolom Name dan Loyalty Points tidak ditemukan).");
+  const H = A[hi].map(c => String(c).trim().toLowerCase()), ix = {};
+  for (const [k, h] of Object.entries(MB_COLS)) ix[k] = H.indexOf(h);
+  const rows = A.slice(hi + 1).filter(r => String(r[ix.n] ?? "").trim()).map(r => {
+    const g = k => ix[k] < 0 ? "" : r[ix[k]], bd = mbDate(g("bd")).slice(0, 10);
+    return [String(g("id") || ""), String(g("n")).trim().slice(0, 80), String(g("g") || "").trim().toUpperCase().slice(0, 1), String(g("ph") || "").replace(/\s/g, ""),
+      bd && bd > "1901" ? bd : "", String(g("type") || "").trim(), mbDate(g("join")).slice(0, 10), mbDate(g("last")), +g("pts") || 0, +g("dep") || 0, /^y/i.test(String(g("na"))) ? 1 : 0];
+  });
+  if (!rows.length) return toast("Daftar pelanggan kosong.");
+  const asOf = rows.map(r => r[MI.last]).filter(Boolean).sort().pop() || today();
+  MBUP = {rows, file: file.name, asOf: asOf.slice(0, 10)}; modalMember();
+}
+function modalMember() {
+  const U = MBUP, mo0 = U.asOf.slice(0, 7), months = [0, 1, 2].map(i => { const d = new Date(mo0 + "-15T12:00:00"); d.setMonth(d.getMonth() - i); return dstr(d).slice(0, 7); });
+  const types = {}; U.rows.forEach(r => types[r[MI.type] || "-"] = (types[r[MI.type] || "-"] || 0) + 1);
+  const exist = (S.members || []).some(m => (m.month || m.id) === mo0);
+  openModal(`<form data-submit="mbSave" class="modal" role="dialog" aria-label="Simpan data member"><div class="modal-h"><h2>Simpan data member</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p style="margin:0"><b>${U.rows.length} pelanggan</b> terbaca dari <i>${esc(U.file)}</i>. Transaksi terakhir di file: <b>${fdate(U.asOf)}</b>.</p>
+    <p class="small muted" style="margin:0">${Object.entries(types).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${esc(t)} ${n}`).join(" · ")}</p>
+    <label class="f">Data bulan<select name="mo">${months.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join("")}</select></label>
+    ${exist ? `<div class="alert warn"><div class="grow small">Data ${monthLabel(mo0)} sudah ada dan akan diganti dengan file ini.</div></div>` : ""}
+    <p class="small muted" style="margin:0">Unggah tiap akhir bulan (atau awal bulan berikutnya). Tiap bulan disimpan terpisah supaya pertumbuhan dan aktivitas member bisa dibandingkan.</p>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitMbSave(form) {
+  const U = MBUP; if (!U) return; const mo = form.mo.value;
+  const d = {month: mo, file: U.file, asOf: U.asOf, at: Date.now(), by: S.me, n: U.rows.length, rows: U.rows};
+  if (await guard(() => S.db.doc("members/" + mo).set(d))) { closeModal(); MBUP = null; S.ui.mbMo = mo; toast("Data member " + monthLabel(mo) + " tersimpan (" + d.n + " pelanggan)."); }
+}
+const mbStaff = r => /karyawan|staff|crew/i.test(r[MI.type] || "");
+const mbDays = (last, ref) => last ? Math.max(0, Math.round((new Date(ref + "T12:00:00") - new Date(last.slice(0, 10) + "T12:00:00")) / 864e5)) : null;
+function mbStats(doc, prev) {
+  const mo = doc.month || doc.id, endMo = addDays(addDays(mo + "-01", 32).slice(0, 7) + "-01", -1);
+  const ref = doc.asOf && doc.asOf < endMo ? doc.asOf : endMo;
+  const all = doc.rows || [], rows = all.filter(r => !mbStaff(r) && !r[MI.na]);
+  const pm = new Map((prev?.rows || []).map(r => [r[MI.id], r]));
+  const z = {mo, ref, all: all.length, staff: all.length - rows.length, total: rows.length, rows, newM: 0, active: 0, ret: 0, oldBase: 0, never: 0,
+    b: {aktif: 0, jarang: 0, tidur: 0, hilang: 0, belum: 0}, gain: 0, gainers: [], g: {M: 0, F: 0}, age: {"<20": 0, "20–24": 0, "25–29": 0, "30–39": 0, "40+": 0}, bdN: 0, join: {}, pts: 0};
+  for (const r of rows) {
+    const j = r[MI.join], l = r[MI.last], d = mbDays(l, ref), isNew = j.slice(0, 7) === mo, act = l.slice(0, 7) === mo;
+    if (isNew) z.newM++; else if (j && j.slice(0, 7) < mo) { z.oldBase++; if (act) z.ret++; }
+    if (act) z.active++;
+    if (d == null) z.b.belum++; else if (d <= 30) z.b.aktif++; else if (d <= 60) z.b.jarang++; else if (d <= 90) z.b.tidur++; else z.b.hilang++;
+    z.pts += r[MI.pts];
+    if (r[MI.g] in z.g) z.g[r[MI.g]]++;
+    if (r[MI.bd]) { z.bdN++; const a = +mo.slice(0, 4) - +r[MI.bd].slice(0, 4); z.age[a < 20 ? "<20" : a < 25 ? "20–24" : a < 30 ? "25–29" : a < 40 ? "30–39" : "40+"]++; }
+    if (j) z.join[j.slice(0, 7)] = (z.join[j.slice(0, 7)] || 0) + 1;
+    if (prev) { const p = pm.get(r[MI.id]), gn = r[MI.pts] - (p ? p[MI.pts] : 0); if (gn > 0) { z.gain += gn; z.gainers.push([r, gn]); } }
+  }
+  z.gainers.sort((a, b) => b[1] - a[1]);
+  return z;
+}
+const mbWa = ph => { const n = String(ph || "").replace(/\D/g, "").replace(/^0/, "62"); return n ? `<a href="https://wa.me/${n}" target="_blank" rel="noopener">${esc(ph)}</a>` : "-"; };
+const mbAgo = d => d == null ? "belum pernah" : d === 0 ? "hari ini" : d + " hari lalu";
+function viewMember() {
+  const L = [...(S.members || [])].map(x => ({...x, month: x.month || x.id})).sort((a, b) => b.month.localeCompare(a.month));
+  const up = `<label class="btn pri" for="member-file" style="cursor:pointer">Unggah Daftar Pelanggan</label><input id="member-file" type="file" accept=".xlsx,.xls" hidden>`;
+  const head = `<div class="pagehead"><h1>Member</h1></div>`;
+  if (!L.length) return head + `<section class="panel"><div class="row" style="justify-content:space-between"><p class="small muted" style="margin:0">Di Olsera buka <b>Pelanggan → Daftar Pelanggan</b>, export ke Excel, lalu unggah di sini tiap akhir bulan.</p>${up}</div></section><div class="empty"><b>Belum ada data member</b><span>Unggah file Daftar Pelanggan dari Olsera untuk mulai.</span></div>`;
+  const mo = L.some(x => x.month === S.ui.mbMo) ? S.ui.mbMo : L[0].month, cur = L.find(x => x.month === mo), prev = L.find(x => x.month < mo) || null;
+  const z = mbStats(cur, prev), zp = prev ? mbStats(prev, L.find(x => x.month < prev.month)) : null, tab = S.ui.mbTab || "ringkas";
+  const delta = (a, b) => b == null ? "" : `<span class="small ${a >= b ? "" : "muted"}">${a >= b ? "+" : "−"}${Math.abs(a - b)} vs ${BLN[+prev.month.slice(5) - 1]}</span>`;
+  const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "-";
+  const top = `<section class="panel"><div class="row" style="justify-content:space-between"><div class="row"><select data-ui="mbMo" aria-label="Bulan" style="width:auto">${L.map(x => `<option value="${x.month}" ${x.month === mo ? "selected" : ""}>${monthLabel(x.month)}</option>`).join("")}</select>
+      <span class="small muted">per ${fdate(z.ref)} · ${esc(cur.file || "")}</span></div>${up}</div>
+    <div class="seg">${[["ringkas", "Ringkasan"], ["aksi", "Perlu dihubungi"], ["daftar", "Daftar member"]].map(([k, l]) => `<button data-act="ui" data-k="mbTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div></section>`;
+  let body = "";
+  if (tab === "ringkas") {
+    const bars = (obj, lbl) => { const mx = Math.max(1, ...Object.values(obj)); return Object.entries(obj).map(([k, v]) => `<div class="row" style="gap:8px;flex-wrap:nowrap"><span class="small" style="width:92px;flex:none">${lbl ? lbl(k) : esc(k)}</span><div class="bar" style="flex:1"><i style="width:${Math.max(v ? 2 : 0, v / mx * 100)}%"></i></div><span class="small" style="width:34px;text-align:right">${v}</span></div>`).join(""); };
+    const joinMo = Object.fromEntries(Object.entries(z.join).sort());
+    const trend = [...L].reverse().slice(-6).map(x => { const p = L.find(y => y.month < x.month), s = mbStats(x, p); return `<tr><td>${monthLabel(x.month)}</td><td class="r">${s.total}</td><td class="r">${s.newM}</td><td class="r">${s.active}</td><td class="r">${pct(s.ret, s.oldBase)}</td></tr>`; }).join("");
+    const insights = [];
+    if (z.oldBase) insights.push(`Dari ${z.oldBase} member lama (gabung sebelum ${BLN[+mo.slice(5) - 1]}), <b>${z.ret} datang lagi</b> bulan ini (${pct(z.ret, z.oldBase)}).`);
+    if (z.b.tidur + z.b.hilang) insights.push(`<b>${z.b.tidur + z.b.hilang} member</b> sudah lebih dari 60 hari tidak transaksi. Lihat tab <i>Perlu dihubungi</i>.`);
+    if (z.newM) insights.push(`${z.newM} member baru bulan ini; ${pct(rowsActiveRepeat(z), z.newM)} di antaranya sudah punya poin lebih dari 2.`);
+    if (z.total) insights.push(`Tanggal lahir terisi ${pct(z.bdN, z.total)} member. Minta kasir isi tanggal lahir saat daftar supaya promo ulang tahun bisa jalan.`);
+    body = `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="kpi"><span class="eyebrow">Total member</span><span class="v">${z.total}</span>${zp ? delta(z.total, zp.total) : `<span class="small muted">${z.staff ? "tanpa " + z.staff + " karyawan" : ""}</span>`}</div>
+      <div class="kpi"><span class="eyebrow">Member baru</span><span class="v">${z.newM}</span>${zp ? delta(z.newM, zp.newM) : `<span class="small muted">gabung di ${monthLabel(mo)}</span>`}</div>
+      <div class="kpi"><span class="eyebrow">Transaksi bulan ini</span><span class="v">${z.active}</span><span class="small muted">${pct(z.active, z.total)} dari semua member</span></div>
+      <div class="kpi"><span class="eyebrow">Member lama kembali</span><span class="v">${pct(z.ret, z.oldBase)}</span><span class="small muted">${z.ret} dari ${z.oldBase}</span></div>
+      ${prev ? `<div class="kpi"><span class="eyebrow">Poin bertambah</span><span class="v">${fq(z.gain)}</span><span class="small muted">dari ${z.gainers.length} member</span></div>` : ""}
+    </div>
+    ${insights.length ? `<section class="panel"><h2>Catatan</h2><ul class="small" style="margin:0;padding-left:18px">${insights.map(t => `<li>${t}</li>`).join("")}</ul></section>` : ""}
+    <div class="grid2" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+      <section class="panel"><h2>Status kunjungan</h2><p class="small muted" style="margin:0">Dihitung dari transaksi terakhir, per ${fdate(z.ref)}.</p>
+        ${bars({"≤ 30 hari": z.b.aktif, "31–60 hari": z.b.jarang, "61–90 hari": z.b.tidur, "> 90 hari": z.b.hilang, "Belum transaksi": z.b.belum})}</section>
+      <section class="panel"><h2>Member baru per bulan</h2><p class="small muted" style="margin:0">Dari tanggal gabung (member yang masih terdaftar).</p>${bars(joinMo, k => monthLabel(k))}</section>
+      <section class="panel"><h2>Profil</h2><p class="small" style="margin:0">Laki-laki ${z.g.M} (${pct(z.g.M, z.total)}) · Perempuan ${z.g.F} (${pct(z.g.F, z.total)})</p>
+        <p class="small muted" style="margin:0">Usia (dari ${z.bdN} member yang mengisi tanggal lahir)</p>${bars(z.age)}</section>
+      <section class="panel"><h2>${prev ? "Poin bertambah terbanyak" : "Poin terbanyak"}</h2><div class="tbl-wrap"><table><thead><tr><th>Member</th><th class="r">${prev ? "+Poin" : "Poin"}</th><th>Terakhir</th></tr></thead><tbody>
+        ${(prev ? z.gainers.slice(0, 10) : [...z.rows].sort((a, b) => b[MI.pts] - a[MI.pts]).slice(0, 10).map(r => [r, r[MI.pts]])).map(([r, v]) => `<tr><td>${esc(r[MI.n])}</td><td class="r">${v}</td><td class="small">${mbAgo(mbDays(r[MI.last], z.ref))}</td></tr>`).join("")}</tbody></table></div></section>
+    </div>
+    ${L.length > 1 ? `<section class="panel"><h2>Tren bulanan</h2><div class="tbl-wrap"><table><thead><tr><th>Bulan</th><th class="r">Member</th><th class="r">Baru</th><th class="r">Transaksi</th><th class="r">Lama kembali</th></tr></thead><tbody>${trend}</tbody></table></div></section>` : `<p class="small muted">Tren bulanan dan poin bertambah muncul setelah ada data 2 bulan atau lebih.</p>`}`;
+  } else if (tab === "aksi") {
+    const wb = z.rows.map(r => [r, mbDays(r[MI.last], z.ref)]).filter(([r, d]) => d != null && d > 30 && d <= 120 && r[MI.pts] >= 4).sort((a, b) => b[0][MI.pts] - a[0][MI.pts]);
+    const nm = (() => { const d = new Date(z.ref + "T12:00:00"); return [d.getMonth() + 1, (d.getMonth() + 1) % 12 + 1].map(m => String(m).padStart(2, "0")); })();
+    const bd = z.rows.filter(r => r[MI.bd] && nm.includes(r[MI.bd].slice(5, 7))).sort((a, b) => (nm.indexOf(a[MI.bd].slice(5, 7)) - nm.indexOf(b[MI.bd].slice(5, 7))) || a[MI.bd].slice(8).localeCompare(b[MI.bd].slice(8)));
+    const once = z.rows.filter(r => r[MI.join] && r[MI.last].slice(0, 10) === r[MI.join] && mbDays(r[MI.last], z.ref) > 30).length;
+    body = `<section class="panel"><h2>Pelanggan setia yang mulai hilang</h2><p class="small muted" style="margin:0">Poin 4 ke atas, tapi sudah 31–120 hari tidak transaksi. Cocok untuk pesan WhatsApp personal atau voucher kembali. Klik nomor untuk buka WhatsApp.</p>
+      <div class="tbl-wrap"><table><thead><tr><th>Member</th><th>WhatsApp</th><th class="r">Poin</th><th>Terakhir</th></tr></thead><tbody>${wb.map(([r, d]) => `<tr><td>${esc(r[MI.n])}</td><td class="small">${mbWa(r[MI.ph])}</td><td class="r">${r[MI.pts]}</td><td class="small">${d} hari lalu</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Tidak ada.</td></tr>`}</tbody></table></div></section>
+      <section class="panel"><h2>Ulang tahun bulan ini &amp; bulan depan</h2><div class="tbl-wrap"><table><thead><tr><th>Member</th><th>Tanggal</th><th>WhatsApp</th><th>Terakhir</th></tr></thead><tbody>${bd.map(r => `<tr><td>${esc(r[MI.n])}</td><td>${+r[MI.bd].slice(8)} ${BLN[+r[MI.bd].slice(5, 7) - 1]}</td><td class="small">${mbWa(r[MI.ph])}</td><td class="small">${mbAgo(mbDays(r[MI.last], z.ref))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Tidak ada data.</td></tr>`}</tbody></table></div></section>
+      <p class="small muted">${once} member hanya bertransaksi di hari mereka daftar dan tidak pernah kembali (lebih dari 30 hari). Ini target promo kunjungan kedua.</p>`;
+  } else {
+    const q = (S.ui.mbQ || "").toLowerCase().trim(), sort = S.ui.mbSort || "last";
+    let rows = (S.ui.mbStaff ? cur.rows : z.rows).filter(r => !q || r[MI.n].toLowerCase().includes(q) || r[MI.ph].includes(q));
+    rows = [...rows].sort(sort === "pts" ? (a, b) => b[MI.pts] - a[MI.pts] : sort === "join" ? (a, b) => b[MI.join].localeCompare(a[MI.join]) : sort === "name" ? (a, b) => a[MI.n].localeCompare(b[MI.n]) : (a, b) => b[MI.last].localeCompare(a[MI.last]));
+    const lim = 200;
+    body = `<section class="panel" style="gap:10px"><div class="row"><div style="flex:1 1 200px"><input id="mb-q" data-ui="mbQ" value="${esc(S.ui.mbQ || "")}" placeholder="Cari nama atau nomor…" aria-label="Cari member"></div>
+      <select data-ui="mbSort" aria-label="Urutkan" style="width:auto">${[["last", "Transaksi terakhir"], ["pts", "Poin"], ["join", "Tanggal gabung"], ["name", "Nama"]].map(([k, l]) => `<option value="${k}" ${k === sort ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Nama</th><th>WhatsApp</th><th>Tipe</th><th>Gabung</th><th>Terakhir</th><th class="r">Poin</th></tr></thead><tbody>
+      ${rows.slice(0, lim).map(r => `<tr><td>${esc(r[MI.n])}${r[MI.bd] ? `<span class="sub">lahir ${+r[MI.bd].slice(8)} ${BLN[+r[MI.bd].slice(5, 7) - 1]} ${r[MI.bd].slice(0, 4)}</span>` : ""}</td><td class="small">${mbWa(r[MI.ph])}</td><td class="small">${esc(r[MI.type])}</td><td class="small">${r[MI.join] ? fdate(r[MI.join]) : "-"}</td><td class="small">${mbAgo(mbDays(r[MI.last], z.ref))}</td><td class="r">${r[MI.pts]}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">Tidak ditemukan.</td></tr>`}</tbody></table></div>
+      <p class="small muted" style="margin:0">${rows.length > lim ? `Menampilkan ${lim} dari ${rows.length}. Pakai pencarian untuk mempersempit.` : rows.length + " member"} · karyawan tidak ditampilkan</p></section>`;
+  }
+  return head + top + body;
+}
+const rowsActiveRepeat = z => z.rows.filter(r => r[MI.join].slice(0, 7) === z.mo && r[MI.pts] > 2).length;
 function viewAnalytics() {
   if (realRole() === "manager") S.ui.anTab = "waste";
   const seg = `<div class="seg">${(realRole() === "manager" ? [["waste", "Waste"]] : [["menu", "Penjualan & menu"], ["waste", "Waste"]]).map(([k, l]) => `<button data-act="ui" data-k="anTab" data-v="${k}" aria-pressed="${S.ui.anTab === k}">${l}</button>`).join("")}</div>`;
@@ -4183,7 +4326,7 @@ const ACT3 = {
   stockCard: b => modalStockCard(b.dataset.id),
   auReload: () => { S.audit = null; render(); }
 };
-const SUBMIT3 = {bankAcc: submitBankAcc, bankTx: submitBankTx, asset: submitAsset};
+const SUBMIT3 = {mbSave: submitMbSave, bankAcc: submitBankAcc, bankTx: submitBankTx, asset: submitAsset};
 document.addEventListener("change", e => {
   const el = e.target;
   if (el.matches("[data-tx-kind]")) { const o = el.selectedOptions[0], f = el.form; if (o.dataset.from !== undefined) f.from.value = o.dataset.from; if (o.dataset.to !== undefined) f.to.value = o.dataset.to; }
@@ -4776,6 +4919,7 @@ document.addEventListener("change", e => {
   const t = e.target;
   if (t.id === "mv-price") return fixInLines();
   if (t.id === "olsera-file" && t.files[0]) { onOlseraFiles([...t.files]); t.value = ""; return; }
+  if (t.id === "member-file" && t.files[0]) { onMemberFile(t.files[0]); t.value = ""; return; }
   if (t.id === "selfie" && t.files[0]) return onSelfie(t.files[0]);
   if (t.id === "sop-photo" && t.files[0]) return onSopPhoto(t.files[0]);
   if (t.id === "ws-photo" && t.files[0]) return onSopPhoto(t.files[0], "ws-prev");
