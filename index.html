@@ -328,6 +328,7 @@ const NAV = [
   ["sales", "Penjualan", ["manager", "finance", "headbar"]],
   ["analitik", "Analitik", ["manager", "finance"]],
   ["member", "Member", ["manager", "finance"]],
+  ["marketing", "Marketing", ["manager", "finance", "crew"]],
   ["keuangan", "Keuangan", ["manager", "finance"]],
   ["sop", "SOP", ["manager", "finance", "headbar", "kitchen", "gudang", "crew"]],
   ["absen", "Tim", ["manager", "finance", "headbar", "gudang", "kitchen", "crew"]],
@@ -338,7 +339,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  hints: lsGet("rouna_hints") === "1", members: [], shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", members: [], mktc: [], mktcamp: {}, mktev: {}, shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], olsmonth: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -551,6 +552,8 @@ async function startData(session) {
   subscribe(S.db.collection("shift").orderBy("month", "desc").limit(4), "shifts", listColl("shifts"));
   if (["owner", "manager", "headbar", "finance"].includes(r0.data)) subscribe(S.db.collection("requests").orderBy("ts", "desc").limit(400), "requests", listColl("requests"));
   if (["owner", "manager", "finance", "headbar"].includes(r0.data)) subscribe(S.db.collection("sp"), "sp", mapColl("sp"));
+  subscribe(S.db.collection("mktc").orderBy("month", "desc").limit(13), "mktc", listColl("mktc"));
+  if (["owner", "manager", "finance"].includes(r0.data)) { subscribe(S.db.collection("mktcamp"), "mktcamp", mapColl("mktcamp")); subscribe(S.db.collection("mktev"), "mktev", mapColl("mktev")); }
   if (["owner", "manager", "finance"].includes(r0.data)) subscribe(S.db.collection("members").orderBy("month", "desc").limit(13), "members", listColl("members"));
   if (["owner", "manager", "finance"].includes(r0.data)) { subscribe(S.db.collection("hrprofile"), "hrprofile", mapColl("hrprofile")); subscribe(S.db.collection("perf").orderBy("month", "desc").limit(12), "perf", listColl("perf")); }
   subscribe(S.db.collection("training"), "training", mapColl("training"));
@@ -566,6 +569,7 @@ const ICON = {
   menu: '<path d="M5 9h12v5a6 6 0 0 1-12 0z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/>',
   sales: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   analitik: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
+  marketing: '<path d="M3 10v4h3l6 4V6L6 10H3z"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a8.5 8.5 0 0 1 0 12"/>',
   member: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.7c2 .7 3.2 2.5 3.5 5.3"/>',
   keuangan: '<rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10h19M7 15h3"/>',
   sop: '<path d="M5 3h10l4 4v14H5z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
@@ -586,11 +590,11 @@ function render() {
   if (!ready) return;
   if (!me() || me().active === false) { $("#app").innerHTML = viewNoLink(); return; }
   if (!S.remembered) { S.remembered = true; if (me().username) rememberUser(me().username, me().name); }
-  const allowed = NAV.filter(n => n[2].includes(role()) && !(realRole() === "manager" && ["sales", "keuangan"].includes(n[0])));
+  const allowed = NAV.filter(n => n[2].includes(role()) && !(realRole() === "manager" && ["sales", "keuangan"].includes(n[0])) && !(n[0] === "marketing" && realRole() === "crew" && !isCreative()));
   if (!allowed.find(n => n[0] === S.view)) S.view = (role() === "crew" && allowed.find(n => n[0] === "absen")) ? "absen" : allowed[0][0];
   const low = lowItems().length;
   const navBtn = (n, cls) => `<button data-act="nav" data-v="${n[0]}" ${S.view === n[0] ? 'aria-current="page"' : ""}>${cls === "side" ? `<span class="nl">${ico(n[0])}${n[1]}</span>` : ico(n[0]) + `<span>${n[1]}</span>`}${n[0] === "stok" && low ? `<span class="badge">${low}</span>` : ""}${n[0] === "order" && pendingForMe() ? `<span class="badge">${pendingForMe()}</span>` : ""}${n[0] === "sop" && S.docs.filter(d => docOk(d) && !docAck(d)).length ? `<span class="badge">${S.docs.filter(d => docOk(d) && !docAck(d)).length}</span>` : ""}</button>`;
-  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, sales: viewSales, analitik: viewAnalytics, member: viewMember, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
+  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, sales: viewSales, analitik: viewAnalytics, member: viewMember, marketing: viewMarketing, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
   $("#app").innerHTML = `<div class="shell">
     <nav class="side" aria-label="Menu"><div class="brand">${WM}<span class="os">OS</span></div>${allowed.map(n => navBtn(n, "side")).join("")}</nav>
     <div style="min-width:0">
@@ -1927,6 +1931,305 @@ function viewMember() {
   return head + top + body;
 }
 const rowsActiveRepeat = z => z.rows.filter(r => r[MI.join].slice(0, 7) === z.mo && r[MI.pts] > 2).length;
+/* ===== MARKETING: campaign, kalender konten, analisa sosmed, event. 23 Nov 2026 =====
+   Data: mktc/<YYYY-MM> {month, posts:{id:{...}}, acct:{ig:{followers,reach,visits}, tt:{followers,views}}}  → owner, manager, crew creative
+         mktcamp/<id> campaign · mktev/<id> event → baca owner/manager/finance, tulis owner/manager
+   Angka Rupiah dari penjualan (Olsera) hanya tampil untuk Owner & Finance. */
+const MK_PLAT = ["IG Feed", "IG Reels", "IG Story", "TikTok"];
+const MK_PILLAR = ["Produk & menu", "Behind the scene", "Komunitas & event", "Edukasi kopi", "Promo", "Pelanggan / UGC"];
+const MK_ST = {ide: ["Ide", ""], produksi: ["Produksi", "warn"], review: ["Review", "acc"], posted: ["Posted", "ok"]};
+const MK_CST = {rencana: ["Rencana", ""], jalan: ["Berjalan", "ok"], selesai: ["Selesai", "acc"], stop: ["Dihentikan", "crit"]};
+const MK_VERD = {lanjut: "Lanjutkan", besar: "Perbesar", stop: "Hentikan"};
+const MK_M = [["reach", "Reach"], ["views", "Views"], ["likes", "Likes"], ["comments", "Komentar"], ["saves", "Saves"], ["shares", "Shares"], ["follows", "Follower baru"]];
+const isCreative = () => realRole() === "crew" && ((S.settings.creative || []).includes(S.me) || S.shifts.some(s => Object.values(s.plan || {}).some(p => p?.[S.me] === "CR")));
+const mkFull = () => ["owner", "manager"].includes(realRole());
+const mkMoney = () => ["owner", "finance"].includes(realRole());
+const mkCanContent = () => mkFull() || isCreative();
+const canMarketing = () => mkFull() || realRole() === "finance" || isCreative();
+const mkDoc = mo => S.mktc.find(x => (x.month || x.id) === mo) || {};
+const mkPosts = mo => Object.entries(mkDoc(mo).posts || {}).map(([id, p]) => ({id, mo, ...p})).filter(p => !p.void);
+const mkPostsRange = (a, b) => { const out = []; let m = a.slice(0, 7); while (m <= b.slice(0, 7)) { out.push(...mkPosts(m).filter(p => p.date >= a && p.date <= b)); m = addDays(m + "-28", 7).slice(0, 7); } return out; };
+const mkEng = p => ["likes", "comments", "saves", "shares"].reduce((s, k) => s + (+p.m?.[k] || 0), 0);
+const mkER = (eng, reach) => reach ? eng / reach : 0;
+const mkCamps = () => Object.entries(S.mktcamp || {}).map(([id, c]) => ({id, ...c})).filter(c => !c.void).sort((a, b) => (b.start || "").localeCompare(a.start || ""));
+const mkEvents = () => Object.entries(S.mktev || {}).map(([id, e]) => ({id, ...e})).filter(e => !e.void).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+const mkRev = d => S.daily.find(x => x.date === d)?.pl?.revenue;
+const mkCreatives = () => activeStaff().filter(([id, s]) => s.role === "crew" && ((S.settings.creative || []).includes(id) || S.shifts.some(x => Object.values(x.plan || {}).some(p => p?.[id] === "CR"))));
+const mkDays = (a, b, dows) => { const out = []; for (let d = a; d <= b; d = addDays(d, 1)) if (!dows?.length || dows.includes(new Date(d + "T12:00:00").getDay())) out.push(d); return out; };
+const mkAvg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+const mkFd = d => d ? +d.slice(8) + " " + BLN[+d.slice(5, 7) - 1] : "-";
+
+/* Hasil campaign dari data Olsera: omzet/hari selama campaign vs 4 minggu sebelumnya (hari yang sama), pemakaian kode promo, produk terkait */
+function mkCampResult(c) {
+  const end = c.end && c.end < today() ? c.end : addDays(today(), -1);
+  const run = c.start && c.start <= end ? mkDays(c.start, end, c.days).filter(d => mkRev(d) != null) : [];
+  const base = c.start ? mkDays(addDays(c.start, -28), addDays(c.start, -1), c.days).filter(d => mkRev(d) != null) : [];
+  const avgRun = mkAvg(run.map(mkRev)), avgBase = mkAvg(base.map(mkRev));
+  const key = (c.promo || "").trim().toLowerCase();
+  let pq = 0, pa = 0;
+  if (key) run.forEach(d => (S.daily.find(x => x.date === d)?.discounts || []).forEach(x => { if (`${x.code || ""} ${x.name || ""}`.toLowerCase().includes(key)) { pq += +x.qty || 0; pa += +x.amt || 0; } }));
+  const prods = (c.products || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  const pr = ds => { let q = 0, r = 0; ds.forEach(d => (S.sales.find(x => x.date === d)?.rows || []).forEach(x => { if (prods.some(p => (x.name || "").toLowerCase().includes(p))) { q += +x.qty || 0; r += +x.rev || 0; } })); return {q, r, n: ds.filter(d => S.sales.some(x => x.date === d)).length}; };
+  const prRun = prods.length ? pr(run) : null, prBase = prods.length ? pr(base) : null;
+  const mb = [...(S.members || [])].sort((a, b) => (b.month || b.id).localeCompare(a.month || a.id))[0];
+  const newMem = mb && c.start ? (mb.rows || []).filter(r => !mbStaff(r) && r[MI.join] >= c.start && r[MI.join] <= end).length : null;
+  const posts = mkPostsRange(c.start || today(), c.end || today()).filter(p => p.camp === c.id), posted = posts.filter(p => p.status === "posted");
+  const reach = posted.reduce((s, p) => s + (+p.m?.reach || 0), 0), eng = posted.reduce((s, p) => s + mkEng(p), 0);
+  return {run, base, avgRun, avgBase, up: avgBase ? avgRun / avgBase - 1 : null, extra: avgBase ? (avgRun - avgBase) * run.length : null, pq, pa, prods, prRun, prBase, newMem, posts, posted, reach, eng, end};
+}
+
+function viewMarketing() {
+  if (!canMarketing()) return `<div class="empty"><b>Menu Marketing</b><span>Hanya untuk Owner, Manager, Finance, dan tim creative.</span></div>`;
+  const tabs = isCreative() ? [["konten", "Konten"], ["sosmed", "Analisa sosmed"]] : [["ringkas", "Ringkasan"], ["campaign", "Campaign"], ["konten", "Konten"], ["sosmed", "Analisa sosmed"], ["event", "Event"]];
+  const tab = tabs.some(t => t[0] === S.ui.mkTab) ? S.ui.mkTab : tabs[0][0];
+  const body = {ringkas: mkRingkas, campaign: mkCampaignView, konten: mkKonten, sosmed: mkSosmed, event: mkEventView}[tab]();
+  return `<div class="pagehead"><h1>Marketing</h1></div>
+    <section class="panel"><div class="seg">${tabs.map(([k, l]) => `<button data-act="ui" data-k="mkTab" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join("")}</div></section>${body}`;
+}
+const mkMoSel = (k, mo) => { const ms = [1, 0, -1, -2, -3, -4, -5].map(i => { const d = new Date(today().slice(0, 7) + "-15T12:00:00"); d.setMonth(d.getMonth() + i); return dstr(d).slice(0, 7); });
+  return `<select data-ui="${k}" aria-label="Bulan" style="width:auto">${ms.map(m => `<option value="${m}" ${m === mo ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>`; };
+
+/* ---- Ringkasan ---- */
+function mkRingkas() {
+  const mo = today().slice(0, 7), posts = mkPosts(mo), posted = posts.filter(p => p.status === "posted"), t = today();
+  const camps = mkCamps(), act = camps.filter(c => c.status === "jalan" || (c.status !== "stop" && c.start <= t && (!c.end || c.end >= t)));
+  const due = camps.filter(c => c.status !== "stop" && !c.verdict && c.end && c.end < t);
+  const acc = mkDoc(mo).acct || {}, accP = mkDoc(addDays(mo + "-01", -1).slice(0, 7)).acct || {};
+  const reach = posted.reduce((s, p) => s + (+p.m?.reach || 0), 0), eng = posted.reduce((s, p) => s + mkEng(p), 0);
+  const ev = mkEvents().filter(e => e.date?.slice(0, 7) === mo);
+  const budget = act.reduce((s, c) => s + (+c.budget || 0), 0), spent = act.reduce((s, c) => s + (+c.cost || 0), 0);
+  const mktExp = mkMoney() ? expEntries(mo).filter(e => e.cat === "Marketing").reduce((s, e) => s + (+e.amt || 0), 0) : null;
+  const wd = mkMoney() ? mkDays(mo + "-01", addDays(t, -1), [1, 2, 3, 4, 5]).map(mkRev).filter(v => v != null) : [];
+  const tgt = +S.settings.mktWeekday || 0;
+  const fl = (a, b) => a ? `${fq(a)}${b ? ` <span class="small muted">${a - b >= 0 ? "+" : "−"}${fq(Math.abs(a - b))}</span>` : ""}` : "-";
+  return `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div class="kpi"><span class="eyebrow">Konten ${BLN[+mo.slice(5) - 1]}</span><span class="v">${posted.length}<span class="small muted"> / ${posts.length}</span></span><span class="small muted">posted / direncanakan</span></div>
+    <div class="kpi"><span class="eyebrow">Reach konten</span><span class="v">${fq(reach)}</span><span class="small muted">ER ${pct(mkER(eng, reach))}</span></div>
+    <div class="kpi"><span class="eyebrow">Follower IG</span><span class="v">${fl(+acc.ig?.followers, +accP.ig?.followers)}</span><span class="small muted">TikTok ${fl(+acc.tt?.followers, +accP.tt?.followers)}</span></div>
+    <div class="kpi"><span class="eyebrow">Campaign berjalan</span><span class="v">${act.length}</span><span class="small muted">budget ${rp(budget)} · terpakai ${rp(spent)}</span></div>
+    ${mkMoney() ? `<div class="kpi"><span class="eyebrow">Biaya Marketing (Keuangan)</span><span class="v">${rp(mktExp)}</span><span class="small muted">kategori "Marketing" ${BLN[+mo.slice(5) - 1]}</span></div>
+    <div class="kpi"><span class="eyebrow">Omzet hari kerja</span><span class="v">${wd.length ? rp(mkAvg(wd)) : "-"}</span><span class="small muted">rata-rata Sen–Jum${tgt ? ` · target ${rp(tgt)}` : ""}</span></div>` : ""}
+  </div>
+  ${due.length ? `<section class="panel"><h2>Perlu diputuskan</h2><p class="small muted" style="margin:0">Campaign sudah selesai tapi belum ada keputusan lanjut, perbesar, atau hentikan.</p>${due.map(c => `<div class="li"><span class="grow"><b>${esc(c.name)}</b><span class="sub">selesai ${mkFd(c.end)}</span></span><button class="btn sm" data-act="mkCampOpen" data-id="${c.id}">Evaluasi</button></div>`).join("")}</section>` : ""}
+  <section class="panel"><div class="panel-h"><h2>Campaign berjalan</h2>${mkFull() ? `<button class="btn sm" data-act="mkCamp">Campaign baru</button>` : ""}</div>
+    ${act.map(c => { const left = c.end ? Math.round((new Date(c.end + "T12:00:00") - new Date(t + "T12:00:00")) / 864e5) : null; return `<div class="li"><span class="grow"><b>${esc(c.name)}</b><span class="sub">${mkFd(c.start)} – ${c.end ? mkFd(c.end) : "tanpa batas"}${left != null && left >= 0 ? ` · sisa ${left} hari` : ""}${c.kpi ? ` · target: ${esc(c.kpi)}` : ""}</span></span><button class="btn sm ghost" data-act="mkCampOpen" data-id="${c.id}">Lihat</button></div>`; }).join("") || `<p class="small muted" style="margin:0">Belum ada campaign berjalan.</p>`}</section>
+  <section class="panel"><h2>Event bulan ini</h2>${ev.map(e => `<div class="li"><span class="grow"><b>${esc(e.name)}</b><span class="sub">${fdate(e.date)}${e.pax ? ` · ${e.pax} peserta` : ""}</span></span></div>`).join("") || `<p class="small muted" style="margin:0">Belum ada event.</p>`}</section>
+  ${mkFull() ? `<section class="panel"><h2>Pengaturan</h2><form data-submit="mkSet" class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 220px">Target omzet hari kerja per hari (Rp)<input name="t" inputmode="numeric" value="${tgt || ""}" placeholder="mis. 9400000"></label><button class="btn" type="submit">Simpan</button></form></section>` : ""}`;
+}
+async function submitMkSet(form) { const v = num(form.t.value); if (await guard(() => mergeDoc("settings/app", {mktWeekday: v || 0}))) toast("Target disimpan."); }
+
+/* ---- Campaign ---- */
+function mkCampaignView() {
+  const L = mkCamps(), f = S.ui.mkCf || "";
+  const list = L.filter(c => !f || c.status === f);
+  return `<section class="panel"><div class="panel-h"><div class="seg">${[["", "Semua"], ...Object.entries(MK_CST).map(([k, v]) => [k, v[0]])].map(([k, l]) => `<button data-act="ui" data-k="mkCf" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>${mkFull() ? `<button class="btn pri sm" data-act="mkCamp">Campaign baru</button>` : ""}</div>
+    ${list.map(c => `<div class="li" style="cursor:pointer" data-act="mkCampOpen" data-id="${c.id}"><span class="grow"><b>${esc(c.name)}</b><span class="sub">${mkFd(c.start)} – ${c.end ? mkFd(c.end) : "tanpa batas"}${c.channel ? " · " + esc(c.channel) : ""}${c.pic ? " · PIC " + esc(sName(c.pic)) : ""}</span></span>
+      ${c.verdict ? `<span class="chip">${MK_VERD[c.verdict]}</span>` : ""}<span class="chip ${MK_CST[c.status || "rencana"][1]}">${MK_CST[c.status || "rencana"][0]}</span></div>`).join("") || `<div class="empty"><b>Belum ada campaign</b><span>Buat campaign untuk tiap program promosi supaya hasilnya bisa diukur dari data Olsera.</span></div>`}
+    <p class="small muted" style="margin:0">Hasil dihitung dari upload Olsera harian: omzet per hari selama campaign dibanding 4 minggu sebelumnya (hari yang sama), pemakaian kode promo, dan penjualan produk terkait. Kenaikan omzet adalah perkiraan, bukan bukti sebab-akibat.</p></section>`;
+}
+function modalCamp(id) {
+  const c = id ? S.mktcamp[id] || {} : {}, dows = c.days || [];
+  openModal(`<form data-submit="mkCamp" data-id="${id || ""}" class="modal" role="dialog" aria-label="Campaign"><div class="modal-h"><h2>${id ? "Ubah campaign" : "Campaign baru"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two">
+      <label class="f" style="grid-column:1/-1">Nama campaign<input name="name" required maxlength="80" value="${esc(c.name || "")}" placeholder="mis. Pagi Rouna 07–09"></label>
+      <label class="f" style="grid-column:1/-1">Tujuan (SMART)<textarea name="goal" rows="2" maxlength="400" placeholder="Spesifik, terukur, ada batas waktu. mis. 25 cup/hari di jam 07–09, akhir Maret">${esc(c.goal || "")}</textarea></label>
+      <label class="f">Mulai<input type="date" name="start" required value="${c.start || today()}"></label>
+      <label class="f">Selesai<input type="date" name="end" value="${c.end || ""}"></label>
+      <div class="f" style="grid-column:1/-1"><span>Hari berlaku (kosong = setiap hari)</span><div class="row">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label class="chip" style="cursor:pointer"><input type="checkbox" name="d${d}" ${dows.includes(d) ? "checked" : ""}> ${HARI[d]}</label>`).join("")}</div></div>
+      <label class="f">Channel<input name="channel" maxlength="60" value="${esc(c.channel || "")}" placeholder="Instagram, iklan IG, kasir, WA…"></label>
+      <label class="f">PIC<select name="pic"><option value="">-</option>${activeStaff().map(([sid, s]) => `<option value="${sid}" ${c.pic === sid ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+      <label class="f">Budget (Rp)<input name="budget" inputmode="numeric" value="${c.budget || ""}"></label>
+      <label class="f">Biaya terpakai (Rp)<input name="cost" inputmode="numeric" value="${c.cost || ""}"></label>
+      <label class="f" style="grid-column:1/-1">Target KPI<input name="kpi" maxlength="120" value="${esc(c.kpi || "")}" placeholder="mis. 150 member Work Club"></label>
+      <label class="f">Kode/nama promo di Olsera<input name="promo" maxlength="60" value="${esc(c.promo || "")}" placeholder="mis. PAGIROUNA"></label>
+      <label class="f">Produk terkait (pisah koma)<input name="products" maxlength="200" value="${esc(c.products || "")}" placeholder="mis. Es Kopi Rouna, Croissant"></label>
+      <label class="f">Status<select name="status">${Object.entries(MK_CST).map(([k, v]) => `<option value="${k}" ${(c.status || "rencana") === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Catatan<textarea name="note" rows="2" maxlength="600">${esc(c.note || "")}</textarea></label>
+    </div>
+    <div class="foot">${id ? `<button type="button" class="btn ghost" data-act="mkCampDel" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitMkCamp(form) {
+  const id = form.dataset.id || uid(), F = form;
+  const d = {name: F.name.value.trim(), goal: F.goal.value.trim(), start: F.start.value, end: F.end.value || "", days: [0, 1, 2, 3, 4, 5, 6].filter(x => F["d" + x].checked),
+    channel: F.channel.value.trim(), pic: F.pic.value, budget: num(F.budget.value) || 0, cost: num(F.cost.value) || 0, kpi: F.kpi.value.trim(), promo: F.promo.value.trim(),
+    products: F.products.value.trim(), status: F.status.value, note: F.note.value.trim(), updatedAt: Date.now(), by: S.me};
+  if (d.end && d.end < d.start) return toast("Tanggal selesai lebih awal dari tanggal mulai.");
+  if (!form.dataset.id) d.createdAt = Date.now();
+  if (await guard(() => mergeDoc("mktcamp/" + id, d))) { closeModal(); toast("Campaign disimpan."); }
+}
+function modalCampOpen(id) {
+  const c = {id, ...S.mktcamp[id]}; if (!c.name) return;
+  const R = mkCampResult(c), st = MK_CST[c.status || "rencana"];
+  const money = mkMoney(), cmpRow = (l, a, b, f) => `<tr><td>${l}</td><td class="r num">${f(a)}</td><td class="r num">${b == null ? "-" : f(b)}</td></tr>`;
+  openModal(`<div class="modal" role="dialog" aria-label="Campaign"><div class="modal-h"><h2>${esc(c.name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="row"><span class="chip ${st[1]}">${st[0]}</span><span class="small muted">${mkFd(c.start)} – ${c.end ? mkFd(c.end) : "tanpa batas"}${c.days?.length ? " · " + c.days.map(d => HARI[d]).join(", ") : ""}${c.pic ? " · PIC " + esc(sName(c.pic)) : ""}</span></div>
+    ${c.goal ? `<p style="margin:0"><b>Tujuan:</b> ${esc(c.goal)}</p>` : ""}${c.kpi ? `<p style="margin:0"><b>Target KPI:</b> ${esc(c.kpi)}</p>` : ""}
+    <p class="small" style="margin:0">Budget ${rp(c.budget)} · terpakai ${rp(c.cost)}${c.budget ? ` (${pct((+c.cost || 0) / c.budget)})` : ""}${c.channel ? " · " + esc(c.channel) : ""}</p>
+    <h3 style="margin:6px 0 0">Hasil</h3>
+    ${money ? (R.run.length ? `<div class="tbl-wrap"><table><thead><tr><th></th><th class="r">Selama campaign</th><th class="r">4 minggu sebelumnya</th></tr></thead><tbody>
+      ${cmpRow("Hari dengan data", R.run.length, R.base.length, fq)}
+      ${cmpRow("Omzet rata-rata/hari", R.avgRun, R.base.length ? R.avgBase : null, rp)}
+      ${R.prods.length ? cmpRow("Produk terkait/hari (qty)", R.prRun.n ? R.prRun.q / R.prRun.n : 0, R.prBase.n ? R.prBase.q / R.prBase.n : null, v => fq(Math.round(v * 10) / 10)) : ""}
+      ${R.prods.length ? cmpRow("Produk terkait/hari (Rp)", R.prRun.n ? R.prRun.r / R.prRun.n : 0, R.prBase.n ? R.prBase.r / R.prBase.n : null, rp) : ""}
+      </tbody></table></div>
+      <p style="margin:0">${R.up == null ? "Belum ada data pembanding sebelum campaign." : `Omzet rata-rata ${R.up >= 0 ? "naik" : "turun"} <b>${pct(Math.abs(R.up))}</b> dibanding sebelum campaign${R.extra > 0 ? `, perkiraan tambahan omzet ${rp(R.extra)}` : ""}${R.extra > 0 && c.cost ? ` untuk biaya ${rp(c.cost)}` : ""}.`}</p>
+      ${c.promo ? `<p style="margin:0">Promo "${esc(c.promo)}" dipakai <b>${fq(R.pq)}×</b>, total potongan ${rp(R.pa)}.</p>` : ""}` : `<p class="small muted" style="margin:0">Belum ada data penjualan Olsera di periode campaign.</p>`) : `<p class="small muted" style="margin:0">Angka penjualan hanya tampil untuk Owner dan Finance.</p>`}
+    ${R.newMem != null ? `<p style="margin:0">Member baru di periode ini: <b>${R.newMem}</b> <span class="small muted">(dari data member terakhir)</span></p>` : ""}
+    <p style="margin:0">Konten terkait: ${R.posted.length} posted dari ${R.posts.length}${R.reach ? ` · reach ${fq(R.reach)} · ER ${pct(mkER(R.eng, R.reach))}` : ""}</p>
+    ${c.verdict ? `<p style="margin:0"><b>Keputusan:</b> ${MK_VERD[c.verdict]} <span class="small muted">· ${fdate(dstr(new Date(c.verdictAt)))} · ${esc(sName(c.verdictBy))}</span>${c.verdictNote ? `<br><span class="small">${esc(c.verdictNote)}</span>` : ""}</p>` : ""}
+    ${c.note ? `<p class="small muted" style="margin:0">${esc(c.note)}</p>` : ""}
+    ${mkFull() ? `<form data-submit="mkVerdict" data-id="${id}" class="fgrid two" style="border-top:1px solid var(--line);padding-top:10px"><label class="f">Keputusan<select name="v">${Object.entries(MK_VERD).map(([k, v]) => `<option value="${k}" ${c.verdict === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="f">Alasan<input name="note" maxlength="300" value="${esc(c.verdictNote || "")}"></label><div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn" data-act="mkCampEdit" data-id="${id}">Ubah campaign</button><button class="btn pri" type="submit">Simpan keputusan</button></div></form>` : ""}
+  </div>`);
+}
+async function submitMkVerdict(form) {
+  const v = form.v.value, d = {verdict: v, verdictNote: form.note.value.trim(), verdictAt: Date.now(), verdictBy: S.me};
+  if (v === "stop") d.status = "stop";
+  if (await guard(() => mergeDoc("mktcamp/" + form.dataset.id, d))) { closeModal(); toast("Keputusan disimpan: " + MK_VERD[v] + "."); }
+}
+
+/* ---- Konten ---- */
+function mkKonten() {
+  const mo = S.ui.mkMo || today().slice(0, 7), f = S.ui.mkSt || "", P = mkPosts(mo).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const list = P.filter(p => !f || (p.status || "ide") === f), cnt = k => P.filter(p => (p.status || "ide") === k).length;
+  const byDate = {}; list.forEach(p => (byDate[p.date] ||= []).push(p));
+  const cr = mkCreatives();
+  return `<section class="panel"><div class="panel-h"><div class="row">${mkMoSel("mkMo", mo)}<span class="small muted">${P.length} konten</span></div>${mkCanContent() ? `<button class="btn pri sm" data-act="mkPost" data-mo="${mo}">Tambah konten</button>` : ""}</div>
+    <div class="seg">${[["", "Semua " + P.length], ...Object.entries(MK_ST).map(([k, v]) => [k, v[0] + " " + cnt(k)])].map(([k, l]) => `<button data-act="ui" data-k="mkSt" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
+    ${Object.keys(byDate).sort().map(d => `<div><div class="eyebrow" style="margin-top:6px">${fdate(d)}</div>${byDate[d].map(p => { const s = MK_ST[p.status || "ide"]; return `<div class="li" style="cursor:pointer" data-act="mkPost" data-id="${p.id}" data-mo="${mo}"><span class="grow"><b>${esc(p.title || "(tanpa judul)")}</b><span class="sub">${p.time ? p.time + " · " : ""}${esc(p.plat || "")}${p.pillar ? " · " + esc(p.pillar) : ""}${p.pic ? " · " + esc(sName(p.pic)) : ""}${p.campName ? " · " + esc(p.campName) : ""}${p.status === "posted" && p.m?.reach ? ` · reach ${fq(p.m.reach)} · ER ${pct(mkER(mkEng(p), +p.m.reach))}` : ""}</span></span>
+      ${p.status === "posted" && !p.m?.reach ? `<span class="chip warn">Isi metrik</span>` : ""}<span class="chip ${s[1]}">${s[0]}</span></div>`; }).join("")}</div>`).join("") || `<div class="empty"><b>Belum ada konten ${monthLabel(mo)}</b><span>Rencanakan konten di sini: tanggal, platform, pilar, PIC. Setelah tayang, isi metriknya untuk analisa.</span></div>`}
+  </section>
+  ${mkFull() ? `<section class="panel"><h2>Tim creative</h2><p class="small muted" style="margin:0">Crew yang punya shift CR di jadwal otomatis masuk. Tambahkan crew lain kalau perlu. Tim creative hanya melihat tab Konten dan Analisa sosmed, tanpa angka penjualan.</p>
+    <div class="row">${cr.map(([id, s]) => `<span class="chip">${esc(s.name)}${(S.settings.creative || []).includes(id) ? ` <button class="btn sm ghost" style="padding:0 4px;min-height:0" data-act="mkCrDel" data-id="${id}" aria-label="Keluarkan ${esc(s.name)}">×</button>` : ""}</span>`).join("") || `<span class="small muted">Belum ada.</span>`}</div>
+    <form data-submit="mkCrAdd" class="row"><select name="sid" style="width:auto">${activeStaff().filter(([id, s]) => s.role === "crew" && !cr.some(x => x[0] === id)).map(([id, s]) => `<option value="${id}">${esc(s.name)}</option>`).join("")}</select><button class="btn sm" type="submit">Tambah ke tim creative</button></form></section>` : ""}`;
+}
+function modalPost(id, mo) {
+  const p = id ? {...(mkDoc(mo).posts || {})[id]} : {date: today() >= mo ? (today().slice(0, 7) === mo ? today() : mo + "-01") : mo + "-01", status: "ide", plat: "IG Reels"};
+  const pillars = [...new Set([...MK_PILLAR, ...S.mktc.flatMap(x => Object.values(x.posts || {}).map(q => q.pillar)).filter(Boolean)])];
+  const camps = mkFull() ? mkCamps().filter(c => c.status !== "stop") : [];
+  openModal(`<form data-submit="mkPost" data-id="${id || ""}" data-mo="${mo}" class="modal" role="dialog" aria-label="Konten"><div class="modal-h"><h2>${id ? "Konten" : "Konten baru"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two">
+      <label class="f" style="grid-column:1/-1">Judul / ide<input name="title" required maxlength="100" value="${esc(p.title || "")}" placeholder="mis. Reels proses manual brew Aurora"></label>
+      <label class="f">Tanggal tayang<input type="date" name="date" required value="${p.date}"></label>
+      <label class="f">Jam<input type="time" name="time" value="${p.time || ""}"></label>
+      <label class="f">Platform<select name="plat">${MK_PLAT.map(x => `<option ${p.plat === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label class="f">Pilar konten<input name="pillar" list="mk-pillars" maxlength="40" value="${esc(p.pillar || "")}"><datalist id="mk-pillars">${pillars.map(x => `<option value="${esc(x)}">`).join("")}</datalist></label>
+      <label class="f">PIC<select name="pic"><option value="">-</option>${activeStaff().map(([sid, s]) => `<option value="${sid}" ${(p.pic || (id ? "" : S.me)) === sid ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+      <label class="f">Status<select name="status">${Object.entries(MK_ST).map(([k, v]) => `<option value="${k}" ${(p.status || "ide") === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
+      ${mkFull() ? `<label class="f" style="grid-column:1/-1">Bagian dari campaign<select name="camp"><option value="">-</option>${camps.map(c => `<option value="${c.id}" ${p.camp === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : p.campName ? `<p class="small muted" style="grid-column:1/-1;margin:0">Campaign: ${esc(p.campName)}</p>` : ""}
+      <label class="f" style="grid-column:1/-1">Caption / brief<textarea name="caption" rows="3" maxlength="2200">${esc(p.caption || "")}</textarea></label>
+      <label class="f" style="grid-column:1/-1">Link postingan<input name="link" type="url" maxlength="300" value="${esc(p.link || "")}" placeholder="https://instagram.com/…"></label>
+    </div>
+    <details ${id || p.status === "posted" ? "open" : ""}><summary><b>Metrik setelah tayang</b> <span class="small muted">isi 2–3 hari setelah posting, dari Insights</span></summary>
+      <div class="fgrid two" style="margin-top:8px">${MK_M.map(([k, l]) => `<label class="f">${l}<input name="m_${k}" inputmode="numeric" value="${p.m?.[k] ?? ""}"></label>`).join("")}</div></details>
+    <div class="foot">${id ? `<button type="button" class="btn ghost" data-act="mkPostDel" data-id="${id}" data-mo="${mo}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitMkPost(form) {
+  const F = form, oldMo = F.dataset.mo, id = F.dataset.id || uid(), date = F.date.value, mo = date.slice(0, 7);
+  const m = {}; MK_M.forEach(([k]) => { const v = F["m_" + k].value.trim(); if (v !== "") m[k] = num(v) || 0; });
+  const d = {title: F.title.value.trim(), date, time: F.time.value, plat: F.plat.value, pillar: F.pillar.value.trim(), pic: F.pic.value, status: F.status.value,
+    caption: F.caption.value.trim(), link: F.link.value.trim(), m, updatedAt: Date.now(), by: S.me};
+  if (F.camp) { d.camp = F.camp.value; d.campName = d.camp ? S.mktcamp[d.camp]?.name || "" : ""; }
+  if (Object.keys(m).length) d.mAt = Date.now();
+  const old = F.dataset.id ? (mkDoc(oldMo).posts || {})[id] : null;
+  if (old && !F.camp) { d.camp = old.camp || ""; d.campName = old.campName || ""; }
+  if (old?.createdAt) d.createdAt = old.createdAt; else d.createdAt = Date.now();
+  const ok = await guard(async () => {
+    await mergeDoc("mktc/" + mo, {posts: {[id]: d}}, {month: mo});
+    if (old && oldMo !== mo) await mergeDoc("mktc/" + oldMo, {posts: {[id]: {void: true}}}, {month: oldMo});
+  });
+  if (ok) { closeModal(); toast("Konten disimpan."); }
+}
+
+/* ---- Analisa sosmed ---- */
+function mkSosmed() {
+  const mo = S.ui.mkSm || today().slice(0, 7), prevMo = addDays(mo + "-01", -1).slice(0, 7);
+  const P = mkPosts(mo).filter(p => p.status === "posted"), M = P.filter(p => +p.m?.reach || +p.m?.views);
+  const acc = mkDoc(mo).acct || {}, accP = mkDoc(prevMo).acct || {};
+  const sum = (a, k) => a.reduce((s, p) => s + (+p.m?.[k] || 0), 0), reach = sum(M, "reach"), eng = M.reduce((s, p) => s + mkEng(p), 0);
+  const grp = key => { const o = {}; M.forEach(p => { const k = key(p) || "-"; (o[k] ||= []).push(p); }); return Object.entries(o).map(([k, a]) => ({k, n: a.length, reach: sum(a, "reach") / a.length, views: sum(a, "views") / a.length, er: mkER(a.reduce((s, p) => s + mkEng(p), 0), sum(a, "reach")), saves: sum(a, "saves") / a.length, fol: sum(a, "follows")})).sort((a, b) => b.er - a.er); };
+  const slot = p => { const h = +(p.time || "").slice(0, 2); return !p.time ? "Jam tidak diisi" : h < 11 ? "Pagi (<11)" : h < 15 ? "Siang (11–15)" : h < 18 ? "Sore (15–18)" : "Malam (≥18)"; };
+  const tbl = (title, rows) => `<section class="panel"><h2>${title}</h2><div class="tbl-wrap"><table><thead><tr><th></th><th class="r">Post</th><th class="r">Reach/post</th><th class="r">Views/post</th><th class="r">ER</th><th class="r">Saves/post</th><th class="r">Follower baru</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(r.k)}</td><td class="r">${r.n}</td><td class="r num">${fq(Math.round(r.reach))}</td><td class="r num">${fq(Math.round(r.views))}</td><td class="r num">${pct(r.er)}</td><td class="r num">${fq(Math.round(r.saves * 10) / 10)}</td><td class="r num">${fq(r.fol)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Belum ada metrik.</td></tr>`}</tbody></table></div></section>`;
+  const top = [...M].sort((a, b) => mkER(mkEng(b), +b.m.reach) - mkER(mkEng(a), +a.m.reach)).slice(0, 5);
+  const notes = [];
+  const byPl = grp(p => p.pillar), byPf = grp(p => p.plat), bySl = grp(slot).filter(r => r.k !== "Jam tidak diisi");
+  if (byPl.length > 1 && byPl[0].n >= 2) notes.push(`Pilar <b>${esc(byPl[0].k)}</b> paling tinggi engagement-nya (ER ${pct(byPl[0].er)}, ${byPl[0].n} post). Pilar terendah: ${esc(byPl[byPl.length - 1].k)} (ER ${pct(byPl[byPl.length - 1].er)}).`);
+  const rr = [...byPf].sort((a, b) => b.reach - a.reach); if (rr.length > 1) notes.push(`Reach per post tertinggi di <b>${esc(rr[0].k)}</b> (${fq(Math.round(rr[0].reach))}).`);
+  if (bySl.length > 1) notes.push(`Jam posting dengan ER terbaik: <b>${bySl[0].k}</b>.`);
+  const miss = P.length - M.length; if (miss) notes.push(`${miss} postingan belum diisi metriknya.`);
+  let salesNote = "";
+  if (mkMoney()) {
+    const days = mkDays(mo + "-01", addDays(addDays(mo + "-01", 32).slice(0, 7) + "-01", -1)).filter(d => d < today() && mkRev(d) != null);
+    const postD = new Set(P.map(p => p.date)), wp = days.filter(d => postD.has(d)).map(mkRev), np = days.filter(d => !postD.has(d)).map(mkRev);
+    if (wp.length && np.length) salesNote = `<section class="panel"><h2>Omzet di hari posting</h2><p style="margin:0">Hari ada posting (${wp.length} hari): rata-rata <b>${rp(mkAvg(wp))}</b> · hari tanpa posting (${np.length} hari): <b>${rp(mkAvg(np))}</b>.</p><p class="small muted" style="margin:0">Hanya gambaran: omzet juga dipengaruhi hari (weekday/weekend), cuaca, dan event.</p></section>`;
+  }
+  const fl = (a, b) => a ? `${fq(a)}${b ? ` <span class="small muted">${a - b >= 0 ? "+" : "−"}${fq(Math.abs(a - b))} vs ${BLN[+prevMo.slice(5) - 1]}</span>` : ""}` : "-";
+  return `<section class="panel"><div class="panel-h"><div class="row">${mkMoSel("mkSm", mo)}</div>${mkCanContent() ? `<button class="btn sm" data-act="mkAcct" data-mo="${mo}">Isi statistik akun</button>` : ""}</div></section>
+    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="kpi"><span class="eyebrow">Posted</span><span class="v">${P.length}</span><span class="small muted">${M.length} dengan metrik</span></div>
+      <div class="kpi"><span class="eyebrow">Total reach</span><span class="v">${fq(reach)}</span><span class="small muted">${M.length ? fq(Math.round(reach / M.length)) + "/post" : ""}</span></div>
+      <div class="kpi"><span class="eyebrow">Engagement rate</span><span class="v">${pct(mkER(eng, reach))}</span><span class="small muted">(like+komen+save+share) ÷ reach</span></div>
+      <div class="kpi"><span class="eyebrow">Follower IG</span><span class="v">${fl(+acc.ig?.followers, +accP.ig?.followers)}</span><span class="small muted">${acc.ig?.reach ? "reach akun " + fq(acc.ig.reach) : ""}${acc.ig?.visits ? " · kunjungan profil " + fq(acc.ig.visits) : ""}</span></div>
+      <div class="kpi"><span class="eyebrow">Follower TikTok</span><span class="v">${fl(+acc.tt?.followers, +accP.tt?.followers)}</span><span class="small muted">${acc.tt?.views ? "views " + fq(acc.tt.views) : ""}</span></div>
+    </div>
+    ${notes.length ? `<section class="panel"><h2>Catatan</h2><ul class="small" style="margin:0;padding-left:18px">${notes.map(t => `<li>${t}</li>`).join("")}</ul></section>` : ""}
+    ${tbl("Per pilar konten", byPl)}${tbl("Per platform", byPf)}${tbl("Per jam posting", grp(slot))}
+    <section class="panel"><h2>5 konten terbaik (ER)</h2>${top.map(p => `<div class="li" style="cursor:pointer" data-act="mkPost" data-id="${p.id}" data-mo="${mo}"><span class="grow"><b>${esc(p.title)}</b><span class="sub">${mkFd(p.date)} · ${esc(p.plat)} · ${esc(p.pillar || "-")} · reach ${fq(+p.m.reach)}</span></span><span class="chip ok">${pct(mkER(mkEng(p), +p.m.reach))}</span></div>`).join("") || `<p class="small muted" style="margin:0">Belum ada konten dengan metrik.</p>`}</section>
+    ${salesNote}`;
+}
+function modalAcct(mo) {
+  const a = mkDoc(mo).acct || {};
+  openModal(`<form data-submit="mkAcct" data-mo="${mo}" class="modal" role="dialog" aria-label="Statistik akun"><div class="modal-h"><h2>Statistik akun · ${monthLabel(mo)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p class="small muted" style="margin:0">Isi di akhir bulan dari Insights (Instagram) dan TikTok Studio, untuk periode 1 bulan.</p>
+    <div class="fgrid two"><label class="f">Follower IG<input name="igf" inputmode="numeric" value="${a.ig?.followers ?? ""}"></label><label class="f">Reach akun IG<input name="igr" inputmode="numeric" value="${a.ig?.reach ?? ""}"></label>
+      <label class="f">Kunjungan profil IG<input name="igv" inputmode="numeric" value="${a.ig?.visits ?? ""}"></label><label class="f">Follower TikTok<input name="ttf" inputmode="numeric" value="${a.tt?.followers ?? ""}"></label>
+      <label class="f">Views TikTok<input name="ttv" inputmode="numeric" value="${a.tt?.views ?? ""}"></label></div>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitMkAcct(form) {
+  const mo = form.dataset.mo, n = k => { const v = form[k].value.trim(); return v === "" ? null : num(v) || 0; };
+  const acct = {ig: {followers: n("igf"), reach: n("igr"), visits: n("igv")}, tt: {followers: n("ttf"), views: n("ttv")}, at: Date.now(), by: S.me};
+  if (await guard(() => mergeDoc("mktc/" + mo, {acct}, {month: mo}))) { closeModal(); toast("Statistik akun disimpan."); }
+}
+
+/* ---- Event ---- */
+function mkEventView() {
+  const L = mkEvents();
+  return `<section class="panel"><div class="panel-h"><h2>Event</h2>${mkFull() ? `<button class="btn pri sm" data-act="mkEv">Event baru</button>` : ""}</div>
+    ${L.map(e => { const r = mkMoney() ? mkEvRes(e) : null; return `<div class="li" ${mkFull() ? `style="cursor:pointer" data-act="mkEv" data-id="${e.id}"` : ""}><span class="grow"><b>${esc(e.name)}</b><span class="sub">${fdate(e.date)}${e.time ? " · " + esc(e.time) : ""}${e.pax ? ` · ${e.pax} peserta` : ""}${e.cost ? ` · biaya ${rp(e.cost)}` : ""}${e.campName ? " · " + esc(e.campName) : ""}</span>
+      ${r && r.rev != null ? `<span class="sub">Omzet hari itu ${rp(r.rev)}${r.base ? ` · rata-rata ${HARI[new Date(e.date + "T12:00:00").getDay()]} 4 minggu sebelumnya ${rp(r.base)} (${r.rev >= r.base ? "+" : "−"}${pct(Math.abs(r.rev / r.base - 1))})` : ""}</span>` : ""}</span></div>`; }).join("") || `<div class="empty"><b>Belum ada event</b><span>Catat Kelas Minggu, malam komunitas, dan event lain untuk melihat dampaknya ke omzet.</span></div>`}
+    <p class="small muted" style="margin:0">Dampak event dibandingkan dengan omzet hari yang sama di 4 minggu sebelumnya. Data Olsera per jam belum ada, jadi yang dibandingkan omzet sehari penuh.</p></section>`;
+}
+function mkEvRes(e) { const rev = mkRev(e.date); const base = mkAvg([7, 14, 21, 28].map(i => mkRev(addDays(e.date, -i))).filter(v => v != null)); return {rev, base}; }
+function modalEv(id) {
+  const e = id ? S.mktev[id] || {} : {date: today()}, camps = mkCamps().filter(c => c.status !== "stop");
+  openModal(`<form data-submit="mkEv" data-id="${id || ""}" class="modal" role="dialog" aria-label="Event"><div class="modal-h"><h2>${id ? "Ubah event" : "Event baru"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f" style="grid-column:1/-1">Nama event<input name="name" required maxlength="80" value="${esc(e.name || "")}" placeholder="mis. Kelas Minggu #2"></label>
+      <label class="f">Tanggal<input type="date" name="date" required value="${e.date || today()}"></label><label class="f">Jam<input name="time" maxlength="20" value="${esc(e.time || "")}" placeholder="16:00–18:00"></label>
+      <label class="f">Jumlah peserta<input name="pax" inputmode="numeric" value="${e.pax || ""}"></label><label class="f">Biaya (Rp)<input name="cost" inputmode="numeric" value="${e.cost || ""}"></label>
+      <label class="f" style="grid-column:1/-1">Bagian dari campaign<select name="camp"><option value="">-</option>${camps.map(c => `<option value="${c.id}" ${e.camp === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Catatan<textarea name="note" rows="2" maxlength="600">${esc(e.note || "")}</textarea></label></div>
+    <div class="foot">${id ? `<button type="button" class="btn ghost" data-act="mkEvDel" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitMkEv(form) {
+  const F = form, id = F.dataset.id || uid(), camp = F.camp.value;
+  const d = {name: F.name.value.trim(), date: F.date.value, time: F.time.value.trim(), pax: num(F.pax.value) || 0, cost: num(F.cost.value) || 0, camp, campName: camp ? S.mktcamp[camp]?.name || "" : "", note: F.note.value.trim(), updatedAt: Date.now(), by: S.me};
+  if (await guard(() => mergeDoc("mktev/" + id, d))) { closeModal(); toast("Event disimpan."); }
+}
+
+const ACT6 = {
+  mkCamp: () => modalCamp(), mkCampEdit: b => modalCamp(b.dataset.id), mkCampOpen: b => modalCampOpen(b.dataset.id),
+  mkCampDel: b => confirmBox("Hapus campaign?", "Campaign ini hilang dari daftar. Konten yang terkait tetap ada.", "Hapus", async () => { if (await guard(() => mergeDoc("mktcamp/" + b.dataset.id, {void: true}))) { closeModal(); toast("Campaign dihapus."); } }),
+  mkPost: b => modalPost(b.dataset.id, b.dataset.mo || today().slice(0, 7)),
+  mkPostDel: b => confirmBox("Hapus konten?", "Konten ini hilang dari kalender dan analisa.", "Hapus", async () => { const mo = b.dataset.mo; if (await guard(() => mergeDoc("mktc/" + mo, {posts: {[b.dataset.id]: {void: true}}}, {month: mo}))) { closeModal(); toast("Konten dihapus."); } }),
+  mkAcct: b => modalAcct(b.dataset.mo), mkEv: b => modalEv(b.dataset.id),
+  mkEvDel: b => confirmBox("Hapus event?", "Event ini hilang dari daftar.", "Hapus", async () => { if (await guard(() => mergeDoc("mktev/" + b.dataset.id, {void: true}))) { closeModal(); toast("Event dihapus."); } }),
+  mkCrDel: async b => { const l = (S.settings.creative || []).filter(x => x !== b.dataset.id); if (await guard(() => mergeDoc("settings/app", {creative: l}))) toast("Dikeluarkan dari tim creative."); }
+};
+const SUBMIT6 = {mkCamp: submitMkCamp, mkVerdict: submitMkVerdict, mkPost: submitMkPost, mkAcct: submitMkAcct, mkEv: submitMkEv, mkSet: submitMkSet,
+  mkCrAdd: async form => { const sid = form.sid.value; if (!sid) return; const l = [...new Set([...(S.settings.creative || []), sid])]; if (await guard(() => mergeDoc("settings/app", {creative: l}))) toast(sName(sid) + " masuk tim creative."); }};
+
 function viewAnalytics() {
   if (realRole() === "manager") S.ui.anTab = "waste";
   const seg = `<div class="seg">${(realRole() === "manager" ? [["waste", "Waste"]] : [["menu", "Penjualan & menu"], ["waste", "Waste"]]).map(([k, l]) => `<button data-act="ui" data-k="anTab" data-v="${k}" aria-pressed="${S.ui.anTab === k}">${l}</button>`).join("")}</div>`;
@@ -5013,7 +5316,7 @@ async function submitAttEdit(f) {
 }
 const ACT5 = {attEdit: b => modalAttEdit(b.dataset.sid, b.dataset.date || "")};
 const SUBMIT5 = {attEdit: submitAttEdit};
-Object.assign(ACT, ACT2, ACT3, ACT4, ACT5); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5);
+Object.assign(ACT, ACT2, ACT3, ACT4, ACT5, ACT6); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5, SUBMIT6);
 /* 6 Nov 2026: cegah kirim ganda (ketuk dua kali) — form yang sedang diproses tidak bisa dikirim lagi sampai selesai. */
 document.addEventListener("submit", async e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (!fn) return;
   if (f.dataset.busy) return; f.dataset.busy = "1"; const btns = [...f.querySelectorAll("[type=submit]")].filter(x => !x.disabled); btns.forEach(x => x.disabled = true);
