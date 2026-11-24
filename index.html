@@ -325,6 +325,7 @@ const NAV = [
   ["order", "Order", ["manager", "finance", "headbar", "gudang", "kitchen"]],
   ["closing", "Closing", ["manager", "headbar", "kitchen", "crew"]],
   ["menu", "Menu", ["manager", "finance", "headbar", "kitchen", "crew"]],
+  ["rnd", "R&D", ["manager", "finance", "headbar", "kitchen", "crew"]],
   ["sales", "Penjualan", ["manager", "finance", "headbar"]],
   ["analitik", "Analitik", ["manager", "finance"]],
   ["member", "Member", ["manager", "finance"]],
@@ -339,7 +340,7 @@ const SPOIL_REASONS = ["Basi/expired", "Tumpah/rusak", "Jatuh", "Gosong/gagal ma
 
 /* ---------- state ---------- */
 const S = {
-  hints: lsGet("rouna_hints") === "1", members: [], mktc: [], mktcamp: {}, mktev: {}, shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
+  hints: lsGet("rouna_hints") === "1", members: [], rnd: {}, mktc: [], mktcamp: {}, mktev: {}, shifts: [], salary: {}, requests: [], hrprofile: {}, sp: {}, perf: [], training: {}, logbook: [], hrMine: null, hrMineAt: 0, payables: [], tg: null, notify: {}, bank: {}, banktx: [], assets: [], audit: null, db: null, assets: null, sample: null, dl: null, session: null, authMode: "login", authUser: "", readOnly: false,
   items: {}, stock: {}, staff: {}, recipes: {}, orders: [], moves: [], closings: [], sales: [], attendance: [], daily: [], olsmonth: [], vouchers: [], expenses: [], cash: [], payroll: [], prices: {}, sops: [], calibs: [], briefs: [], docs: [], sop: {}, settings: {},
   ready: {}, me: lsGet("runa_me"), view: lsGet("runa_view") || "home",
   ui: {q: "", cat: "", area: "", st: "", range: 30, closeArea: "bar", recDate: "", salesDay: "", ordTab: "aktif", setTab: "staf", menuTab: "menu", menuId: "", absMonth: today().slice(0, 7), finTab: "pl", finMonth: today().slice(0, 7), anTab: "menu", priceItem: "", sopTab: "check", docId: ""},
@@ -552,6 +553,7 @@ async function startData(session) {
   subscribe(S.db.collection("shift").orderBy("month", "desc").limit(4), "shifts", listColl("shifts"));
   if (["owner", "manager", "headbar", "finance"].includes(r0.data)) subscribe(S.db.collection("requests").orderBy("ts", "desc").limit(400), "requests", listColl("requests"));
   if (["owner", "manager", "finance", "headbar"].includes(r0.data)) subscribe(S.db.collection("sp"), "sp", mapColl("sp"));
+  subscribe(S.db.collection("rnd"), "rnd", mapColl("rnd"));
   subscribe(S.db.collection("mktc").orderBy("month", "desc").limit(13), "mktc", listColl("mktc"));
   if (["owner", "manager", "finance"].includes(r0.data)) { subscribe(S.db.collection("mktcamp"), "mktcamp", mapColl("mktcamp")); subscribe(S.db.collection("mktev"), "mktev", mapColl("mktev")); }
   if (["owner", "manager", "finance"].includes(r0.data)) subscribe(S.db.collection("members").orderBy("month", "desc").limit(13), "members", listColl("members"));
@@ -569,6 +571,7 @@ const ICON = {
   menu: '<path d="M5 9h12v5a6 6 0 0 1-12 0z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/>',
   sales: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   analitik: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
+  rnd: '<path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 14h9"/>',
   marketing: '<path d="M3 10v4h3l6 4V6L6 10H3z"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a8.5 8.5 0 0 1 0 12"/>',
   member: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.7c2 .7 3.2 2.5 3.5 5.3"/>',
   keuangan: '<rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10h19M7 15h3"/>',
@@ -594,7 +597,7 @@ function render() {
   if (!allowed.find(n => n[0] === S.view)) S.view = (role() === "crew" && allowed.find(n => n[0] === "absen")) ? "absen" : allowed[0][0];
   const low = lowItems().length;
   const navBtn = (n, cls) => `<button data-act="nav" data-v="${n[0]}" ${S.view === n[0] ? 'aria-current="page"' : ""}>${cls === "side" ? `<span class="nl">${ico(n[0])}${n[1]}</span>` : ico(n[0]) + `<span>${n[1]}</span>`}${n[0] === "stok" && low ? `<span class="badge">${low}</span>` : ""}${n[0] === "order" && pendingForMe() ? `<span class="badge">${pendingForMe()}</span>` : ""}${n[0] === "sop" && S.docs.filter(d => docOk(d) && !docAck(d)).length ? `<span class="badge">${S.docs.filter(d => docOk(d) && !docAck(d)).length}</span>` : ""}</button>`;
-  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, sales: viewSales, analitik: viewAnalytics, member: viewMember, marketing: viewMarketing, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
+  const V = {home: viewHome, stok: viewStock, order: viewOrders, closing: viewClosing, menu: viewMenu, rnd: viewRnd, sales: viewSales, analitik: viewAnalytics, member: viewMember, marketing: viewMarketing, keuangan: viewFinance, sop: viewSop, absen: viewAbsen, setting: viewSettings}[S.view];
   $("#app").innerHTML = `<div class="shell">
     <nav class="side" aria-label="Menu"><div class="brand">${WM}<span class="os">OS</span></div>${allowed.map(n => navBtn(n, "side")).join("")}</nav>
     <div style="min-width:0">
@@ -849,12 +852,12 @@ function myAttChip() {
   if (!a.out) return `<span class="chip ok">Masuk ${ftime(a.in.ts)}</span>`;
   return `<span class="chip">${ftime(a.in.ts)}–${ftime(a.out.ts)}</span>`;
 }
-const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], opnameArea: ["Opname area", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"]};
+const MOVE_LBL = {in: ["Masuk gudang", "ok"], inArea: ["Masuk ke area", "ok"], take: ["Ambil ke area", "acc"], ret: ["Retur ke gudang", ""], opname: ["Opname gudang", "warn"], opnameArea: ["Opname area", "warn"], spoil: ["Spoil", "crit"], order: ["Terima order", "ok"], prod: ["Produksi batch", "ok"], waste: ["Waste", "crit"], prodUse: ["Bahan produksi", "acc"], rnd: ["R&D", "acc"], rndG: ["R&D dari gudang", "acc"]};
 const whoName = id => id === "import" ? "Impor Excel" : S.staff[id]?.name || "-";
 const movesOf = m => Object.entries(m.list || {}).map(([k, v]) => ({...v, _k: k, _d: m.date}));
 /* 13 Nov 2026: Owner/Manager bisa membetulkan mutasi stok yang salah input (jenis, jumlah) atau menghapusnya. */
-const MV_EDIT = ["in", "inArea", "take", "ret", "waste"];
-const mvEff = (t, q) => ({in: [q, 0], inArea: [0, q], take: [-q, q], ret: [q, -q], waste: [0, -q]}[t] || [0, 0]);
+const MV_EDIT = ["in", "inArea", "take", "ret", "waste", "rnd", "rndG"];
+const mvEff = (t, q) => ({in: [q, 0], inArea: [0, q], take: [-q, q], ret: [q, -q], waste: [0, -q], rnd: [0, -q], rndG: [-q, 0]}[t] || [0, 0]);
 const canEditMove = m => isMgr() && m && m._k && MV_EDIT.includes(m.t) && !m.void;
 function moveRow(m) {
   const it = S.items[m.itemId]; const l = m.void ? ["Dihapus", ""] : MOVE_LBL[m.t] || [m.t, ""];
@@ -2230,6 +2233,117 @@ const ACT6 = {
 const SUBMIT6 = {mkCamp: submitMkCamp, mkVerdict: submitMkVerdict, mkPost: submitMkPost, mkAcct: submitMkAcct, mkEv: submitMkEv, mkSet: submitMkSet,
   mkCrAdd: async form => { const sid = form.sid.value; if (!sid) return; const l = [...new Set([...(S.settings.creative || []), sid])]; if (await guard(() => mergeDoc("settings/app", {creative: l}))) toast(sName(sid) + " masuk tim creative."); }};
 
+/* ===== R&D: proyek pengembangan menu, progress dengan foto, bahan R&D tidak dihitung waste. 24 Nov 2026 =====
+   rnd/<id> {name, area, goal, status, pic, createdAt, by, logs:{id:{ts, by, note, photos:[{pic|asset}], mats:[{itemId, qty, src, cost}]}}}
+   Bahan yang dipakai dicatat juga sebagai mutasi stok t:"rnd" (dari area) / "rndG" (dari gudang), dengan rnd:<id proyek>.
+   Stok tetap berkurang, tapi tidak masuk waste dan tidak masuk pemakaian closing (karena stok sudah berkurang sebelum closing). */
+const RND_ST = {ide: ["Ide", ""], uji: ["Uji coba", "warn"], final: ["Final / siap jual", "ok"], batal: ["Dibatalkan", "crit"]};
+let RNDPICS = [];
+const canRndProj = () => ["owner", "manager", "headbar", "kitchen"].includes(realRole());
+const canRndLog = () => realRole() !== "finance";
+const rndList = () => Object.entries(S.rnd || {}).map(([id, p]) => ({id, ...p})).filter(p => !p.void).sort((a, b) => (rndLast(b) || b.createdAt || 0) - (rndLast(a) || a.createdAt || 0));
+const rndLogs = p => Object.entries(p.logs || {}).map(([id, l]) => ({id, ...l})).filter(l => !l.void).sort((a, b) => b.ts - a.ts);
+const rndLast = p => rndLogs(p)[0]?.ts || 0;
+const rndCost = (p, mo) => rndLogs(p).filter(l => !mo || dstr(new Date(l.ts)).startsWith(mo)).reduce((s, l) => s + (l.mats || []).reduce((t, m) => t + (+m.cost || 0), 0), 0);
+const rndPic = x => `<a href="${esc(photoSrc(x))}" target="_blank" rel="noopener" title="Lihat foto"><img class="thumb" src="${esc(x.pic || photoSrc(x))}" alt="Foto progress" loading="lazy" style="width:88px;height:88px"></a>`;
+const rndMonthCost = mo => rndList().reduce((s, p) => s + rndCost(p, mo), 0)
+  + S.moves.filter(m => m.date.startsWith(mo)).reduce((s, m) => s + Object.values(m.list || {}).filter(e => ["rnd", "rndG"].includes(e.t) && !e.rnd && !e.void).reduce((t, e) => t + (+e.qty || 0) * itemCost(e.itemId), 0), 0);
+
+function viewRnd() {
+  if (S.ui.rndId && S.rnd?.[S.ui.rndId] && !S.rnd[S.ui.rndId].void) return viewRndProj(S.ui.rndId);
+  const L = rndList(), f = S.ui.rndSt ?? "aktif", mo = today().slice(0, 7);
+  const list = L.filter(p => f === "" || (f === "aktif" ? ["ide", "uji"].includes(p.status || "ide") : (p.status || "ide") === f));
+  const money = realRole() !== "crew";
+  return `<div class="pagehead"><div><div class="eyebrow">Research &amp; development</div><h1>R&amp;D</h1></div>${canRndProj() ? `<button class="btn pri" data-act="rndNew">Proyek baru</button>` : ""}</div>
+    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="kpi"><span class="eyebrow">Proyek berjalan</span><span class="v">${L.filter(p => ["ide", "uji"].includes(p.status || "ide")).length}</span><span class="small muted">${L.filter(p => p.status === "final").length} sudah final</span></div>
+      ${money ? `<div class="kpi"><span class="eyebrow">Biaya bahan R&amp;D ${BLN[+mo.slice(5) - 1]}</span><span class="v">${rp(rndMonthCost(mo))}</span><span class="small muted">tidak dihitung waste</span></div>` : ""}
+      <div class="kpi"><span class="eyebrow">Progress bulan ini</span><span class="v">${L.reduce((s, p) => s + rndLogs(p).filter(l => dstr(new Date(l.ts)).startsWith(mo)).length, 0)}</span><span class="small muted">catatan dengan foto &amp; bahan</span></div>
+    </div>
+    <section class="panel"><div class="seg">${[["aktif", "Berjalan"], ["final", "Final"], ["batal", "Dibatalkan"], ["", "Semua"]].map(([k, l]) => `<button data-act="ui" data-k="rndSt" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
+      ${list.map(p => { const lg = rndLogs(p), ph = lg.flatMap(l => l.photos || [])[0], st = RND_ST[p.status || "ide"];
+        return `<div class="li" style="cursor:pointer;gap:12px" data-act="rndOpen" data-id="${p.id}">${ph ? `<img class="thumb" src="${esc(ph.pic || photoSrc(ph))}" alt="" loading="lazy" style="width:56px;height:56px;flex:none">` : `<span class="thumb" style="width:56px;height:56px;flex:none;display:grid;place-items:center" aria-hidden="true">${ico("rnd")}</span>`}
+          <span class="grow"><b>${esc(p.name)}</b><span class="sub">${AREAS[p.area] || ""}${p.pic ? " · " + esc(sName(p.pic)) : ""} · ${lg.length} progress${lg[0] ? " · terakhir " + fdt(lg[0].ts) : ""}${money ? " · bahan " + rp(rndCost(p)) : ""}</span></span><span class="chip ${st[1]}">${st[0]}</span></div>`; }).join("")
+        || `<div class="empty"><b>Belum ada proyek R&amp;D${f === "aktif" ? " yang berjalan" : ""}</b><span>Buat proyek untuk tiap menu baru yang sedang diuji. Bahan yang dipakai dicatat di sini, bukan di form waste.</span></div>`}
+    </section>
+    <p class="small muted">Bahan R&amp;D tetap mengurangi stok, tapi tidak masuk analisis waste dan tidak dihitung sebagai pemakaian di closing. Tes kalibrasi espresso harian tetap dicatat sebagai waste "Tes/kalibrasi".</p>`;
+}
+function viewRndProj(id) {
+  const p = {id, ...S.rnd[id]}, st = RND_ST[p.status || "ide"], lg = rndLogs(p), money = realRole() !== "crew";
+  const mats = {}; lg.forEach(l => (l.mats || []).forEach(m => { const g = (mats[m.itemId] ||= {q: 0, c: 0}); g.q += +m.qty || 0; g.c += +m.cost || 0; }));
+  return `<div class="pagehead"><div><button class="btn sm ghost" data-act="ui" data-k="rndId" data-v="">← Semua proyek</button><h1 style="margin-top:6px">${esc(p.name)}</h1></div>
+      <div class="row">${canRndLog() && p.status !== "batal" ? `<button class="btn pri" data-act="rndLog" data-id="${id}">Catat progress</button>` : ""}${canRndProj() ? `<button class="btn" data-act="rndEdit" data-id="${id}">Ubah</button>` : ""}</div></div>
+    <section class="panel"><div class="row"><span class="chip ${st[1]}">${st[0]}</span><span class="small muted">${AREAS[p.area] || ""}${p.pic ? " · PIC " + esc(sName(p.pic)) : ""} · dibuat ${p.createdAt ? fdt(p.createdAt) : "-"}</span></div>
+      ${p.goal ? `<p style="margin:0"><b>Tujuan:</b> ${esc(p.goal)}</p>` : ""}${p.result ? `<p style="margin:0"><b>Hasil / resep final:</b> ${esc(p.result)}</p>` : ""}
+      ${Object.keys(mats).length ? `<details><summary><b>Total bahan dipakai</b>${money ? ` · ${rp(Object.values(mats).reduce((s, g) => s + g.c, 0))}` : ""}</summary><div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Jumlah</th>${money ? `<th class="r">Biaya</th>` : ""}</tr></thead><tbody>
+        ${Object.entries(mats).sort((a, b) => b[1].c - a[1].c).map(([iid, g]) => `<tr><td>${esc(S.items[iid]?.name || "Bahan dihapus")}</td><td class="r num">${fq(g.q)} ${esc(S.items[iid]?.unit || "")}</td>${money ? `<td class="r num">${rp(g.c)}</td>` : ""}</tr>`).join("")}</tbody></table></div></details>` : ""}
+    </section>
+    <section class="panel"><h2>Progress</h2>
+      ${lg.map(l => `<div style="border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px"><div class="row" style="justify-content:space-between"><span class="small"><b>${fdt(l.ts)}</b> · ${esc(sName(l.by))}</span>${(l.by === S.me || canRndProj()) ? `<button class="btn sm ghost" data-act="rndLogDel" data-id="${id}" data-l="${l.id}">Hapus</button>` : ""}</div>
+        ${l.note ? `<p style="margin:0;white-space:pre-wrap">${esc(l.note)}</p>` : ""}
+        ${(l.photos || []).length ? `<div class="row">${l.photos.map(rndPic).join("")}</div>` : ""}
+        ${(l.mats || []).length ? `<div class="small muted">Bahan: ${l.mats.map(m => `${esc(S.items[m.itemId]?.name || "-")} ${fq(m.qty)} ${esc(S.items[m.itemId]?.unit || "")}${m.src === "gudang" ? " (gudang)" : ""}`).join(" · ")}${money ? ` · ${rp(l.mats.reduce((s, m) => s + (+m.cost || 0), 0))}` : ""}</div>` : ""}</div>`).join("")
+        || `<p class="small muted" style="margin:0">Belum ada progress. Catat setiap kali uji coba: foto hasilnya, apa yang diubah, dan bahan yang dipakai.</p>`}
+    </section>`;
+}
+function modalRnd(id) {
+  const p = id ? S.rnd[id] || {} : {area: realRole() === "kitchen" ? "kitchen" : "bar", status: "ide", pic: S.me};
+  openModal(`<form data-submit="rnd" data-id="${id || ""}" class="modal" role="dialog" aria-label="Proyek R&D"><div class="modal-h"><h2>${id ? "Ubah proyek" : "Proyek R&amp;D baru"}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="fgrid two"><label class="f" style="grid-column:1/-1">Nama proyek / menu<input name="name" required maxlength="80" value="${esc(p.name || "")}" placeholder="mis. Signature seasonal Desember"></label>
+      <label class="f">Area<select name="area">${Object.entries(AREAS).map(([k, v]) => `<option value="${k}" ${p.area === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="f">PIC<select name="pic"><option value="">-</option>${activeStaff().map(([sid, s]) => `<option value="${sid}" ${p.pic === sid ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+      <label class="f">Status<select name="status">${Object.entries(RND_ST).map(([k, v]) => `<option value="${k}" ${(p.status || "ide") === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Tujuan<textarea name="goal" rows="2" maxlength="400" placeholder="mis. minuman non-kopi untuk sore, modal ≤ 30%, rilis 1 Des">${esc(p.goal || "")}</textarea></label>
+      <label class="f" style="grid-column:1/-1">Hasil / resep final<textarea name="result" rows="2" maxlength="800" placeholder="Isi saat sudah final">${esc(p.result || "")}</textarea></label></div>
+    <div class="foot">${id ? `<button type="button" class="btn ghost" data-act="rndDel" data-id="${id}">Hapus</button>` : ""}<button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan</button></div></form>`);
+}
+async function submitRnd(form) {
+  const F = form, id = F.dataset.id || uid();
+  const d = {name: F.name.value.trim(), area: F.area.value, pic: F.pic.value, status: F.status.value, goal: F.goal.value.trim(), result: F.result.value.trim(), updatedAt: Date.now()};
+  if (!F.dataset.id) Object.assign(d, {createdAt: Date.now(), by: S.me});
+  if (await guard(() => mergeDoc("rnd/" + id, d))) { closeModal(); S.ui.rndId = id; toast("Proyek disimpan."); render(); }
+}
+function modalRndLog(id) {
+  RNDPICS = []; const p = S.rnd[id] || {};
+  const row = i => `<div class="row" style="flex-wrap:nowrap;gap:6px"><select name="mi${i}" style="flex:1;min-width:0">${itemOptions("", i < 3 ? p.area : "")}</select><input name="mq${i}" type="number" step="any" min="0" inputmode="decimal" placeholder="Jml" style="width:84px;flex:none"></div>`;
+  openModal(`<form data-submit="rndLog" data-id="${id}" class="modal" role="dialog" aria-label="Catat progress R&D"><div class="modal-h"><h2>Progress · ${esc(p.name || "")}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <label class="f">Catatan<textarea name="note" rows="3" maxlength="1500" placeholder="Apa yang diuji, apa yang diubah, rasa/feedback, langkah berikutnya"></textarea></label>
+    <div class="row"><label class="btn sm" for="rnd-photo" style="cursor:pointer">Tambah foto (maks 4)</label><input id="rnd-photo" type="file" accept="image/*" multiple hidden><div id="rnd-prev" class="row"></div></div>
+    <div class="f"><span>Bahan yang dipakai <span class="small muted">(stok berkurang, tidak dihitung waste)</span></span>${[0, 1, 2, 3, 4].map(row).join("")}</div>
+    <label class="f">Ambil bahan dari<select name="src"><option value="area">Stok area ${AREAS[p.area] ? AREAS[p.area].toLowerCase() : ""}</option><option value="gudang">Gudang</option></select></label>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan progress</button></div></form>`);
+}
+async function onRndPhotos(files) {
+  for (const file of [...files].slice(0, 4 - RNDPICS.length)) {
+    try { const small = await shrink(file, 200, .6), big = await shrink(file, 1280, .78); RNDPICS.push({thumb: small.toDataURL("image/jpeg", .6), big: await new Promise(r => big.toBlob(r, "image/jpeg", .78))}); }
+    catch (e) { toast("Ada foto yang tidak terbaca."); }
+  }
+  const box = $("#rnd-prev"); if (box) box.innerHTML = RNDPICS.map(x => `<img class="thumb" src="${x.thumb}" alt="Pratinjau" style="width:56px;height:56px">`).join("");
+}
+async function submitRndLog(form) {
+  const id = form.dataset.id, p = S.rnd[id]; if (!p) return;
+  const note = form.note.value.trim(), src = form.src.value, mats = [];
+  for (let i = 0; i < 5; i++) { const iid = form["mi" + i].value, q = num(form["mq" + i].value); if (iid && q > 0) mats.push({itemId: iid, qty: q, src, cost: Math.round(q * itemCost(iid))}); }
+  if (!note && !RNDPICS.length && !mats.length) return toast("Isi catatan, foto, atau bahan yang dipakai.");
+  const btn = form.querySelector("[type=submit]"); btn.disabled = true;
+  const photos = [];
+  for (const x of RNDPICS) { const ph = {pic: x.thumb}; if (S.upl && x.big) { try { const up = await S.upl.upload(x.big, {type: "image/jpeg"}); ph.asset = up.id; } catch (e) { console.warn(e); } } photos.push(ph); }
+  const lid = uid();
+  const ok = await guard(async () => {
+    for (const m of mats) { const s = stockOf(m.itemId), have = Math.max(0, +(src === "gudang" ? s.gudang : s.area) || 0), dq = -Math.min(m.qty, have); await addStock(m.itemId, src === "gudang" ? dq : 0, src === "gudang" ? 0 : dq); }
+    if (mats.length) await logMoves(mats.map(m => ({t: src === "gudang" ? "rndG" : "rnd", itemId: m.itemId, qty: m.qty, area: p.area, rnd: id, rndLog: lid, note: "R&D · " + p.name})));
+    await mergeDoc("rnd/" + id, {logs: {[lid]: {ts: Date.now(), by: S.me, note, photos, mats}}, updatedAt: Date.now(), ...(p.status === "ide" || !p.status ? {status: "uji"} : {})});
+  });
+  if (ok) { RNDPICS = []; closeModal(); toast("Progress tersimpan" + (mats.length ? `, ${mats.length} bahan dicatat sebagai R&D (bukan waste).` : ".")); } else btn.disabled = false;
+}
+const ACT7 = {
+  rndNew: () => modalRnd(), rndEdit: b => modalRnd(b.dataset.id), rndLog: b => modalRndLog(b.dataset.id),
+  rndOpen: b => { S.ui.rndId = b.dataset.id; window.scrollTo(0, 0); render(); },
+  rndDel: b => confirmBox("Hapus proyek R&D?", "Proyek dan progressnya hilang dari daftar. Mutasi stok bahan yang sudah dipakai tetap tercatat.", "Hapus", async () => { if (await guard(() => mergeDoc("rnd/" + b.dataset.id, {void: true}))) { closeModal(); S.ui.rndId = ""; toast("Proyek dihapus."); render(); } }),
+  rndLogDel: b => confirmBox("Hapus progress ini?", "Catatan dan fotonya hilang. Stok bahan yang sudah dipakai tidak dikembalikan; kalau bahannya salah, perbaiki lewat Riwayat mutasi.", "Hapus", async () => { if (await guard(() => mergeDoc("rnd/" + b.dataset.id, {logs: {[b.dataset.l]: {void: true}}}))) toast("Progress dihapus."); })
+};
+const SUBMIT7 = {rnd: submitRnd, rndLog: submitRndLog};
+
 function viewAnalytics() {
   if (realRole() === "manager") S.ui.anTab = "waste";
   const seg = `<div class="seg">${(realRole() === "manager" ? [["waste", "Waste"]] : [["menu", "Penjualan & menu"], ["waste", "Waste"]]).map(([k, l]) => `<button data-act="ui" data-k="anTab" data-v="${k}" aria-pressed="${S.ui.anTab === k}">${l}</button>`).join("")}</div>`;
@@ -2578,7 +2692,7 @@ function viewPnl(mo) {
       <div class="li"><div class="grow">Prime cost<span class="sub small muted">bahan baku + vendor + tenaga kerja</span></div><span class="num">${pc(P.bb + P.vendor + P.labor)}</span></div>
     </div></section>
     <section class="panel"><h2>Pembanding dari sistem</h2><div class="list">
-      <div class="li"><div class="grow">Bahan terpakai menurut closing<span class="sub small muted">${P.nClose} hari closing · termasuk waste ${rp(P.waste)}</span></div><span class="num">${rp(P.use + P.waste)}</span></div>
+      <div class="li"><div class="grow">Bahan terpakai menurut closing<span class="sub small muted">${P.nClose} hari closing · termasuk waste ${rp(P.waste)} · bahan R&amp;D ${rp(rndMonthCost(P.mo))} tidak termasuk</span></div><span class="num">${rp(P.use + P.waste)}</span></div>
       <div class="li"><div class="grow">Barang masuk tercatat di stok<span class="sub small muted">nilai nota barang masuk & order</span></div><span class="num">${rp(P.stockIn)}</span></div>
       <div class="li"><div class="grow">HPP menurut Olsera</div><span class="num">${rp(P.hppOls)}</span></div>
       ${hppRounaRows(salesForMonth(P.mo), P.rev, P.hppOls || null).replace("Unggah export penjualan per produk Olsera untuk tanggal ini", "Unggah export penjualan per produk Olsera bulan ini")}
@@ -2812,7 +2926,7 @@ async function submitSop(form) {
 function modalWaste() {
   SOPPIC = null;
   openModal(`<form data-submit="waste" class="modal" role="dialog" aria-label="Form waste"><div class="modal-h"><h2>Form waste</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
-    <p class="small muted" style="margin:0">Timbang dulu, foto, lalu catat di sini saat bahan terbuang. Stok area langsung berkurang, jadi bahan ini tidak perlu diisi lagi di kolom spoil saat closing.</p>
+    <p class="small muted" style="margin:0">Timbang dulu, foto, lalu catat di sini saat bahan terbuang. Stok area langsung berkurang, jadi bahan ini tidak perlu diisi lagi di kolom spoil saat closing. Bahan untuk uji menu baru dicatat di menu <b>R&amp;D</b>, bukan di sini.</p>
     <label class="f">Bahan<select id="ws-item" name="item" required>${itemOptions("")}</select></label>
     <div class="fgrid two"><label class="f">Jumlah terbuang (satuan bahan)<input id="ws-qty" name="qty" type="number" step="any" min="0" inputmode="decimal" required></label>
       <label class="f">Alasan<select id="ws-reason" name="reason">${SPOIL_REASONS.map(x => `<option>${x}</option>`).join("")}</select></label></div>
@@ -4580,7 +4694,7 @@ function deprCard(P) {
 }
 
 /* ===== Kartu stok ===== */
-const GUDANG_EFF = {in: 1, order: 1, take: -1, ret: 1, opname: 1};
+const GUDANG_EFF = {in: 1, order: 1, take: -1, ret: 1, opname: 1, rndG: -1};
 function modalStockCard(id) {
   const it = S.items[id]; if (!it) return;
   const s = stockOf(id);
@@ -4596,7 +4710,7 @@ function modalStockCard(id) {
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Waktu</th><th>Jenis</th><th class="r">Gudang +/−</th><th class="r">Saldo gudang</th><th class="r">Area / lain</th><th>Oleh · catatan</th></tr></thead><tbody>
       ${withBal.map(e => `<tr><td class="num">${fdt(e.ts)}</td><td><span class="chip ${cls(e)}">${(MOVE_LBL[e.t] || [e.t])[0]}</span></td>
         <td class="r num">${e.g != null ? (e.g > 0 ? "+" : "") + fq(e.g) : ""}</td><td class="r num">${e.bal != null ? fq(e.bal) : ""}</td>
-        <td class="r num">${e.g == null ? (e.qty > 0 && !["spoil", "waste"].includes(e.t) ? "+" : "−") + fq(Math.abs(e.qty)) : ""}</td>
+        <td class="r num">${e.g == null ? (e.qty > 0 && !["spoil", "waste", "rnd"].includes(e.t) ? "+" : "−") + fq(Math.abs(e.qty)) : ""}</td>
         <td class="small">${esc(S.staff[e.by]?.name || "-")}${e.note ? `<span class="sub">${esc(e.note)}</span>` : ""}</td></tr>`).join("")}</tbody></table></div>`
       : `<div class="empty">Belum ada mutasi untuk bahan ini dalam 45 hari terakhir.</div>`}
     <p class="small muted" style="margin:0">Saldo gudang dihitung mundur dari stok sekarang. Pemakaian harian di bar/kitchen dicatat lewat Closing, bukan di kartu ini.</p></div>`);
@@ -5226,6 +5340,7 @@ document.addEventListener("change", e => {
   if (t.id === "selfie" && t.files[0]) return onSelfie(t.files[0]);
   if (t.id === "sop-photo" && t.files[0]) return onSopPhoto(t.files[0]);
   if (t.id === "ws-photo" && t.files[0]) return onSopPhoto(t.files[0], "ws-prev");
+  if (t.id === "rnd-photo" && t.files.length) { onRndPhotos(t.files); t.value = ""; return; }
   if (t.id === "pd-item" || t.id === "pd-src") return prodPreview();
   if (t.dataset.imp && IMP) { const k = t.dataset.imp; if (k === "day") IMP.date = t.value; else if (k === "join") IMP.joinVar = t.checked; else IMP.map[k] = t.value === "" ? undefined : +t.value; modalImport(); return; }
   if (t.dataset.ui && t.tagName === "SELECT") { S.ui[t.dataset.ui] = t.value; render(); }
@@ -5316,7 +5431,7 @@ async function submitAttEdit(f) {
 }
 const ACT5 = {attEdit: b => modalAttEdit(b.dataset.sid, b.dataset.date || "")};
 const SUBMIT5 = {attEdit: submitAttEdit};
-Object.assign(ACT, ACT2, ACT3, ACT4, ACT5, ACT6); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5, SUBMIT6);
+Object.assign(ACT, ACT2, ACT3, ACT4, ACT5, ACT6, ACT7); Object.assign(SUBMIT, SUBMIT2, SUBMIT3, SUBMIT4, SUBMIT5, SUBMIT6, SUBMIT7);
 /* 6 Nov 2026: cegah kirim ganda (ketuk dua kali) — form yang sedang diproses tidak bisa dikirim lagi sampai selesai. */
 document.addEventListener("submit", async e => { const f = e.target.closest("form[data-submit]"); if (!f) return; e.preventDefault(); const fn = SUBMIT[f.dataset.submit]; if (!fn) return;
   if (f.dataset.busy) return; f.dataset.busy = "1"; const btns = [...f.querySelectorAll("[type=submit]")].filter(x => !x.disabled); btns.forEach(x => x.disabled = true);
