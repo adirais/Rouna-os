@@ -2244,7 +2244,7 @@ const canRndLog = () => realRole() !== "finance";
 const rndList = () => Object.entries(S.rnd || {}).map(([id, p]) => ({id, ...p})).filter(p => !p.void).sort((a, b) => (rndLast(b) || b.createdAt || 0) - (rndLast(a) || a.createdAt || 0));
 const rndLogs = p => Object.entries(p.logs || {}).map(([id, l]) => ({id, ...l})).filter(l => !l.void).sort((a, b) => b.ts - a.ts);
 const rndLast = p => rndLogs(p)[0]?.ts || 0;
-const rndCost = (p, mo) => rndLogs(p).filter(l => !mo || dstr(new Date(l.ts)).startsWith(mo)).reduce((s, l) => s + (l.mats || []).reduce((t, m) => t + (+m.cost || 0), 0), 0);
+const rndCost = (p, mo) => rndLogs(p).filter(l => !mo || dstr(new Date(l.ts)).startsWith(mo)).reduce((s, l) => s + [...(l.mats || []), ...(l.buys || [])].reduce((t, m) => t + (+m.cost || 0), 0), 0);
 const rndPic = x => `<a href="${esc(photoSrc(x))}" target="_blank" rel="noopener" title="Lihat foto"><img class="thumb" src="${esc(x.pic || photoSrc(x))}" alt="Foto progress" loading="lazy" style="width:88px;height:88px"></a>`;
 const rndMonthCost = mo => rndList().reduce((s, p) => s + rndCost(p, mo), 0)
   + S.moves.filter(m => m.date.startsWith(mo)).reduce((s, m) => s + Object.values(m.list || {}).filter(e => ["rnd", "rndG"].includes(e.t) && !e.rnd && !e.void).reduce((t, e) => t + (+e.qty || 0) * itemCost(e.itemId), 0), 0);
@@ -2270,19 +2270,20 @@ function viewRnd() {
 }
 function viewRndProj(id) {
   const p = {id, ...S.rnd[id]}, st = RND_ST[p.status || "ide"], lg = rndLogs(p), money = realRole() !== "crew";
-  const mats = {}; lg.forEach(l => (l.mats || []).forEach(m => { const g = (mats[m.itemId] ||= {q: 0, c: 0}); g.q += +m.qty || 0; g.c += +m.cost || 0; }));
+  const mats = {}; lg.forEach(l => { (l.mats || []).forEach(m => { const g = (mats[m.itemId] ||= {q: 0, c: 0}); g.q += +m.qty || 0; g.c += +m.cost || 0; }); (l.buys || []).forEach(m => { const g = (mats["x:" + m.name.toLowerCase() + "|" + (m.unit || "")] ||= {q: 0, c: 0, name: m.name, unit: m.unit, buy: 1}); g.q += +m.qty || 0; g.c += +m.cost || 0; }); });
   return `<div class="pagehead"><div><button class="btn sm ghost" data-act="ui" data-k="rndId" data-v="">← Semua proyek</button><h1 style="margin-top:6px">${esc(p.name)}</h1></div>
       <div class="row">${canRndLog() && p.status !== "batal" ? `<button class="btn pri" data-act="rndLog" data-id="${id}">Catat progress</button>` : ""}${canRndProj() ? `<button class="btn" data-act="rndEdit" data-id="${id}">Ubah</button>` : ""}</div></div>
     <section class="panel"><div class="row"><span class="chip ${st[1]}">${st[0]}</span><span class="small muted">${AREAS[p.area] || ""}${p.pic ? " · PIC " + esc(sName(p.pic)) : ""} · dibuat ${p.createdAt ? fdt(p.createdAt) : "-"}</span></div>
       ${p.goal ? `<p style="margin:0"><b>Tujuan:</b> ${esc(p.goal)}</p>` : ""}${p.result ? `<p style="margin:0"><b>Hasil / resep final:</b> ${esc(p.result)}</p>` : ""}
       ${Object.keys(mats).length ? `<details><summary><b>Total bahan dipakai</b>${money ? ` · ${rp(Object.values(mats).reduce((s, g) => s + g.c, 0))}` : ""}</summary><div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Jumlah</th>${money ? `<th class="r">Biaya</th>` : ""}</tr></thead><tbody>
-        ${Object.entries(mats).sort((a, b) => b[1].c - a[1].c).map(([iid, g]) => `<tr><td>${esc(S.items[iid]?.name || "Bahan dihapus")}</td><td class="r num">${fq(g.q)} ${esc(S.items[iid]?.unit || "")}</td>${money ? `<td class="r num">${rp(g.c)}</td>` : ""}</tr>`).join("")}</tbody></table></div></details>` : ""}
+        ${Object.entries(mats).sort((a, b) => b[1].c - a[1].c).map(([iid, g]) => `<tr><td>${esc(g.buy ? g.name : S.items[iid]?.name || "Bahan dihapus")}${g.buy ? ` <span class="chip">dibeli khusus</span>` : ""}</td><td class="r num">${g.q ? fq(g.q) + " " + esc(g.buy ? g.unit || "" : S.items[iid]?.unit || "") : "-"}</td>${money ? `<td class="r num">${rp(g.c)}</td>` : ""}</tr>`).join("")}</tbody></table></div></details>` : ""}
     </section>
     <section class="panel"><h2>Progress</h2>
       ${lg.map(l => `<div style="border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px"><div class="row" style="justify-content:space-between"><span class="small"><b>${fdt(l.ts)}</b> · ${esc(sName(l.by))}</span>${(l.by === S.me || canRndProj()) ? `<button class="btn sm ghost" data-act="rndLogDel" data-id="${id}" data-l="${l.id}">Hapus</button>` : ""}</div>
         ${l.note ? `<p style="margin:0;white-space:pre-wrap">${esc(l.note)}</p>` : ""}
         ${(l.photos || []).length ? `<div class="row">${l.photos.map(rndPic).join("")}</div>` : ""}
-        ${(l.mats || []).length ? `<div class="small muted">Bahan: ${l.mats.map(m => `${esc(S.items[m.itemId]?.name || "-")} ${fq(m.qty)} ${esc(S.items[m.itemId]?.unit || "")}${m.src === "gudang" ? " (gudang)" : ""}`).join(" · ")}${money ? ` · ${rp(l.mats.reduce((s, m) => s + (+m.cost || 0), 0))}` : ""}</div>` : ""}</div>`).join("")
+        ${(l.mats || []).length ? `<div class="small muted">Bahan stok: ${l.mats.map(m => `${esc(S.items[m.itemId]?.name || "-")} ${fq(m.qty)} ${esc(S.items[m.itemId]?.unit || "")}${m.src === "gudang" ? " (gudang)" : ""}`).join(" · ")}${money ? ` · ${rp(l.mats.reduce((s, m) => s + (+m.cost || 0), 0))}` : ""}</div>` : ""}
+        ${(l.buys || []).length ? `<div class="small muted">Dibeli khusus R&amp;D: ${l.buys.map(m => `${esc(m.name)}${m.qty ? " " + fq(m.qty) + " " + esc(m.unit || "") : ""}${money ? " " + rp(m.cost) : ""}${m.where ? " (" + esc(m.where) + ")" : ""}`).join(" · ")}</div>` : ""}</div>`).join("")
         || `<p class="small muted" style="margin:0">Belum ada progress. Catat setiap kali uji coba: foto hasilnya, apa yang diubah, dan bahan yang dipakai.</p>`}
     </section>`;
 }
@@ -2310,7 +2311,10 @@ function modalRndLog(id) {
     <label class="f">Catatan<textarea name="note" rows="3" maxlength="1500" placeholder="Apa yang diuji, apa yang diubah, rasa/feedback, langkah berikutnya"></textarea></label>
     <div class="row"><label class="btn sm" for="rnd-photo" style="cursor:pointer">Tambah foto (maks 4)</label><input id="rnd-photo" type="file" accept="image/*" multiple hidden><div id="rnd-prev" class="row"></div></div>
     <div class="f"><span>Bahan yang dipakai <span class="small muted">(stok berkurang, tidak dihitung waste)</span></span>${[0, 1, 2, 3, 4].map(row).join("")}</div>
-    <label class="f">Ambil bahan dari<select name="src"><option value="area">Stok area ${AREAS[p.area] ? AREAS[p.area].toLowerCase() : ""}</option><option value="gudang">Gudang</option></select></label>
+    <details><summary><b>Bahan dibeli khusus R&amp;D</b> <span class="small muted">(belum ada di daftar stok, mis. sampel sirup, buah)</span></summary>
+      <div class="f" style="margin-top:8px">${[0, 1, 2].map(i => `<div class="fgrid two" style="gap:6px;border-top:1px dashed var(--line);padding-top:6px"><input name="bn${i}" maxlength="60" placeholder="Nama bahan" style="grid-column:1/-1"><div class="row" style="flex-wrap:nowrap;gap:6px"><input name="bq${i}" type="number" step="any" min="0" inputmode="decimal" placeholder="Jumlah" style="min-width:0"><input name="bu${i}" maxlength="10" placeholder="Satuan" style="width:92px;flex:none"></div><input name="bc${i}" inputmode="numeric" placeholder="Harga total (Rp)"><input name="bw${i}" maxlength="40" placeholder="Beli di (opsional)" style="grid-column:1/-1"></div>`).join("")}
+      <p class="small muted" style="margin:0">Tidak menambah stok, hanya dicatat sebagai biaya R&amp;D proyek ini. Pembayarannya tetap dicatat Finance di Keuangan seperti biasa.</p></div></details>
+    <label class="f">Ambil bahan stok dari<select name="src"><option value="area">Stok area ${AREAS[p.area] ? AREAS[p.area].toLowerCase() : ""}</option><option value="gudang">Gudang</option></select></label>
     <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Simpan progress</button></div></form>`);
 }
 async function onRndPhotos(files) {
@@ -2324,7 +2328,9 @@ async function submitRndLog(form) {
   const id = form.dataset.id, p = S.rnd[id]; if (!p) return;
   const note = form.note.value.trim(), src = form.src.value, mats = [];
   for (let i = 0; i < 5; i++) { const iid = form["mi" + i].value, q = num(form["mq" + i].value); if (iid && q > 0) mats.push({itemId: iid, qty: q, src, cost: Math.round(q * itemCost(iid))}); }
-  if (!note && !RNDPICS.length && !mats.length) return toast("Isi catatan, foto, atau bahan yang dipakai.");
+  const buys = [];
+  for (let i = 0; i < 3; i++) { const n = form["bn" + i].value.trim(), q = num(form["bq" + i].value) || 0, c = num(form["bc" + i].value) || 0; if (!n && (q || c)) return toast("Isi nama bahan yang dibeli khusus R&D."); if (n) buys.push({name: n, qty: q, unit: form["bu" + i].value.trim(), cost: Math.round(c), where: form["bw" + i].value.trim()}); }
+  if (!note && !RNDPICS.length && !mats.length && !buys.length) return toast("Isi catatan, foto, atau bahan yang dipakai.");
   const btn = form.querySelector("[type=submit]"); btn.disabled = true;
   const photos = [];
   for (const x of RNDPICS) { const ph = {pic: x.thumb}; if (S.upl && x.big) { try { const up = await S.upl.upload(x.big, {type: "image/jpeg"}); ph.asset = up.id; } catch (e) { console.warn(e); } } photos.push(ph); }
@@ -2332,9 +2338,9 @@ async function submitRndLog(form) {
   const ok = await guard(async () => {
     for (const m of mats) { const s = stockOf(m.itemId), have = Math.max(0, +(src === "gudang" ? s.gudang : s.area) || 0), dq = -Math.min(m.qty, have); await addStock(m.itemId, src === "gudang" ? dq : 0, src === "gudang" ? 0 : dq); }
     if (mats.length) await logMoves(mats.map(m => ({t: src === "gudang" ? "rndG" : "rnd", itemId: m.itemId, qty: m.qty, area: p.area, rnd: id, rndLog: lid, note: "R&D · " + p.name})));
-    await mergeDoc("rnd/" + id, {logs: {[lid]: {ts: Date.now(), by: S.me, note, photos, mats}}, updatedAt: Date.now(), ...(p.status === "ide" || !p.status ? {status: "uji"} : {})});
+    await mergeDoc("rnd/" + id, {logs: {[lid]: {ts: Date.now(), by: S.me, note, photos, mats, buys}}, updatedAt: Date.now(), ...(p.status === "ide" || !p.status ? {status: "uji"} : {})});
   });
-  if (ok) { RNDPICS = []; closeModal(); toast("Progress tersimpan" + (mats.length ? `, ${mats.length} bahan dicatat sebagai R&D (bukan waste).` : ".")); } else btn.disabled = false;
+  if (ok) { RNDPICS = []; closeModal(); toast("Progress tersimpan" + (mats.length ? `, ${mats.length} bahan stok dicatat sebagai R&D (bukan waste)` : "") + (buys.length ? `, ${buys.length} bahan beli khusus` : "") + "."); } else btn.disabled = false;
 }
 const ACT7 = {
   rndNew: () => modalRnd(), rndEdit: b => modalRnd(b.dataset.id), rndLog: b => modalRndLog(b.dataset.id),
