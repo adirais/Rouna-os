@@ -324,7 +324,7 @@ const NAV = [
   ["stok", "Stok", ["manager", "finance", "headbar", "gudang", "kitchen"]],
   ["order", "Order", ["manager", "finance", "headbar", "gudang", "kitchen"]],
   ["closing", "Closing", ["manager", "headbar", "kitchen", "crew"]],
-  ["menu", "Menu", ["manager", "finance", "headbar", "kitchen", "crew"]],
+  ["menu", "Menu", ["manager", "finance", "headbar", "kitchen"]],
   ["rnd", "R&D", ["manager", "finance", "headbar", "kitchen", "crew"]],
   ["sales", "Penjualan", ["manager", "finance", "headbar"]],
   ["analitik", "Analitik", ["manager", "finance"]],
@@ -2274,7 +2274,7 @@ function viewRndProj(id) {
   return `<div class="pagehead"><div><button class="btn sm ghost" data-act="ui" data-k="rndId" data-v="">← Semua proyek</button><h1 style="margin-top:6px">${esc(p.name)}</h1></div>
       <div class="row">${canRndLog() && p.status !== "batal" ? `<button class="btn pri" data-act="rndLog" data-id="${id}">Catat progress</button>` : ""}${canRndProj() ? `<button class="btn" data-act="rndEdit" data-id="${id}">Ubah</button>` : ""}</div></div>
     <section class="panel"><div class="row"><span class="chip ${st[1]}">${st[0]}</span><span class="small muted">${AREAS[p.area] || ""}${p.pic ? " · PIC " + esc(sName(p.pic)) : ""} · dibuat ${p.createdAt ? fdt(p.createdAt) : "-"}</span></div>
-      ${p.goal ? `<p style="margin:0"><b>Tujuan:</b> ${esc(p.goal)}</p>` : ""}${p.result ? `<p style="margin:0"><b>Hasil / resep final:</b> ${esc(p.result)}</p>` : ""}
+      ${p.goal ? `<p style="margin:0"><b>Tujuan:</b> ${esc(p.goal)}</p>` : ""}${p.result && canSeeRecipe() ? `<p style="margin:0"><b>Hasil / resep final:</b> ${esc(p.result)}</p>` : ""}
       ${Object.keys(mats).length ? `<details><summary><b>Total bahan dipakai</b>${money ? ` · ${rp(Object.values(mats).reduce((s, g) => s + g.c, 0))}` : ""}</summary><div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Jumlah</th>${money ? `<th class="r">Biaya</th>` : ""}</tr></thead><tbody>
         ${Object.entries(mats).sort((a, b) => b[1].c - a[1].c).map(([iid, g]) => `<tr><td>${esc(g.buy ? g.name : S.items[iid]?.name || "Bahan dihapus")}${g.buy ? ` <span class="chip">dibeli khusus</span>` : ""}</td><td class="r num">${g.q ? fq(g.q) + " " + esc(g.buy ? g.unit || "" : S.items[iid]?.unit || "") : "-"}</td>${money ? `<td class="r num">${rp(g.c)}</td>` : ""}</tr>`).join("")}</tbody></table></div></details>` : ""}
     </section>
@@ -2552,6 +2552,8 @@ function prodPlan() {
 }
 function prodPreview() {
   const p = prodPlan(), el = $("#pd-prev"); if (!el || !p) return;
+  if (!canSeeRecipe()) { const short = p.need.filter(l => l.have < l.need).map(l => S.items[l.itemId]?.name || "?");
+    el.innerHTML = `${short.length ? `<div class="alert crit"><div class="grow small">Stok ${p.src} kurang: ${esc(short.join(", "))}. Cek dulu sebelum produksi.</div></div>` : `<div class="alert ok"><div class="grow small">Stok bahan cukup.</div></div>`}<div class="alert acc"><div class="grow">Hasil: <b class="num">${fq(p.out)} ${esc(p.it.unit)}</b> ${esc(p.it.name)}</div></div>`; return; }
   el.innerHTML = `<div class="tbl-wrap"><table><thead><tr><th>Bahan</th><th class="r">Dibutuhkan</th><th class="r">Stok ${p.src}</th></tr></thead><tbody>
     ${p.need.map(l => { const i = S.items[l.itemId]; return `<tr><td>${esc(i?.name || "?")}</td><td class="r num">${fq(l.need)} ${esc(i?.unit || "")}</td><td class="r"><span class="chip ${l.have >= l.need ? "ok" : "crit"}">${fq(l.have)}</span></td></tr>`; }).join("")}</tbody></table></div>
     <div class="alert acc"><div class="grow">Hasil: <b class="num">${fq(p.out)} ${esc(p.it.unit)}</b> ${esc(p.it.name)} · HPP ${rp(itemCost(p.it.id))}/${esc(p.it.unit)}${+p.it.prep.shelf ? ` · pakai sebelum ${fdate(addDays(today(), +p.it.prep.shelf))}` : ""}</div></div>`;
@@ -3080,6 +3082,8 @@ function briefPanel() {
 /* ---------- MENU & COGS ---------- */
 const canCost = () => ["manager", "finance", "headbar"].includes(role());
 const canRecipe = () => ["manager", "headbar"].includes(role());
+/* 25 Nov 2026: resep (menu & batch) tidak ditampilkan ke crew/gudang */
+const canSeeRecipe = () => ["owner", "manager", "finance", "headbar", "kitchen"].includes(realRole());
 const canFcSet = () => ["manager", "finance"].includes(role());
 const TYPE_ORDER = {Minuman: 0, Makanan: 1, Lainnya: 2};
 function sold30() {
@@ -3099,6 +3103,7 @@ function menuRows() {
 const fcChip = m => m.fc == null ? `<span class="chip">harga jual kosong</span>` : `<span class="chip ${m.st}">${pct(m.fc)}</span>`;
 const sugPrice = m => Math.ceil(m.hpp / m.t / 1000) * 1000;
 function viewMenu() {
+  if (!canSeeRecipe()) return `<div class="empty"><b>Resep tidak tersedia</b><span>Resep menu hanya untuk Owner, Manager, Finance, Headbar, dan Kitchen.</span></div>`;
   const tab = S.ui.menuTab || "menu", tabs = [["menu", "Menu"], ["olahan", "Bahan olahan"]]; if (canCost()) tabs.push(["bahan", "Bahan baku & harga"]);
   if (tab === "menu" && S.ui.menuId && S.recipes[S.ui.menuId]) return viewMenuDetail(S.ui.menuId);
   const rows = menuRows(), priced = rows.filter(m => m.fc != null);
