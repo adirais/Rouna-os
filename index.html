@@ -2600,9 +2600,12 @@ function pnl(mo) {
   else if (daily.length) { rev = daily.reduce((s, d) => s + (d.pl?.revenue || 0), 0); revDays = daily.length; revSrc = "Laporan Olsera"; }
   else { rev = sales.reduce((s, x) => s + (x.total || 0), 0); revDays = sales.length; revSrc = sales.length ? "Penjualan per produk" : "Belum ada data"; }
   const ex = expEntries(mo), byCat = {}; ex.forEach(e => byCat[e.cat] = (byCat[e.cat] || 0) + (+e.amt || 0));
-  const pr = payrollOf(mo), payNet = pr ? +pr.bersih || 0 : 0;
+  /* 26 Nov 2026: kalau gaji bersih final belum diisi, pakai gaji bersih sementara dari payRows (jadwal + absensi + gaji pokok) */
+  const pr = payrollOf(mo), payFinal = pr && pr.bersih != null && pr.bersih !== "";
+  let payNet = payFinal ? +pr.bersih || 0 : 0, payEst = false;
+  if (!payFinal && Object.keys(S.salary || {}).length) { const est = payRows(mo).filter(r => r.pk).reduce((t, r) => t + r.net, 0); if (est > 0) { payNet = est; payEst = true; } }
   const groups = EXP_GROUPS.map(([g, cats]) => { const rows = cats.filter(c => byCat[c]).map(c => [c, byCat[c]]); const extra = Object.keys(byCat).filter(c => !EXP_CATS.includes(c) && g === "Operasional (non-produksi)").map(c => [c, byCat[c]]);
-    const all = [...rows, ...extra]; if (g === "Gaji Karyawan" && pr) all.unshift(["Gaji bersih (payroll)", payNet]); return {g, rows: all, total: all.reduce((s, x) => s + x[1], 0)}; });
+    const all = [...rows, ...extra]; if (g === "Gaji Karyawan" && payNet) all.unshift([payEst ? "Gaji bersih sementara (dari absensi)" : "Gaji bersih (payroll)", payNet]); return {g, rows: all, total: all.reduce((s, x) => s + x[1], 0)}; });
   const nb = groups.find(x => x.g === "Non-Beban"), beban = groups.filter(x => x.g !== "Non-Beban").reduce((s, x) => s + x.total, 0);
   const saving = byCat["Saving"] || 0, petty = byCat["Petty Cash"] || 0, laba = rev - beban, net = laba - saving;
   const book = ex.reduce((s, e) => s + (+e.amt || 0), 0);
@@ -2611,13 +2614,14 @@ function pnl(mo) {
   let stockIn = 0; S.moves.filter(m => (m.date || "").startsWith(mo)).forEach(m => Object.values(m.list || {}).forEach(e => { if (e.t === "in" || e.t === "order") stockIn += e.qty * (+e.price || itemCost(e.itemId)); }));
   const g = n => groups.find(x => x.g === n)?.total || 0;
   const elapsed = mo === today().slice(0, 7) ? +today().slice(8) : daysInMonth(mo);
-  return {mo, rev, revDays, revSrc, cash, ex, byCat, groups, beban, saving, petty, laba, net, book, pr, payNet, use, waste, nClose: cls.length, stockIn, elapsed,
+  return {mo, rev, revDays, revSrc, cash, ex, byCat, groups, beban, saving, petty, laba, net, book, pr, payNet, payEst, payFinal, use, waste, nClose: cls.length, stockIn, elapsed,
     bb: g("Bahan Baku Murni"), vendor: g("Produk Vendor"), labor: g("Gaji Karyawan"), hppOls: revSrc === "Rekap bulanan Olsera" ? (+olsMonthOf(mo)?.daily?.pl?.hpp || 0) : daily.reduce((s, d) => s + (d.pl?.hpp || 0), 0)};
 }
 function finAudit(P) {
   const out = [], mo = P.mo;
   if (P.revDays < P.elapsed) out.push(["warn", `${P.elapsed - P.revDays} hari belum ada data pemasukan`, "Pendapatan bulan ini belum lengkap."]);
-  if (!P.pr && P.ex.length) out.push(["warn", "Total gaji bulan ini belum diisi", "Laba masih belum dikurangi gaji bersih karyawan. Isi di tab Gaji."]);
+  if (P.payEst) out.push(["acc", "Gaji masih angka sementara", `Laba sudah dikurangi gaji bersih sementara ${rp(P.payNet)} dari jadwal dan absensi${P.mo === today().slice(0, 7) ? " (gaji pokok sebulan penuh, potongan sampai hari ini)" : ""}. Setelah gaji dibayar, isi Gaji bersih dibayar di tab Gaji supaya laba memakai angka final.`]);
+  else if (!P.payFinal && P.ex.length) out.push(["warn", "Total gaji bulan ini belum diisi", "Laba masih belum dikurangi gaji bersih karyawan. Isi gaji pokok staf di tab Gaji (klik nama → Atur gaji), atau isi Gaji bersih dibayar."]);
   const diff = P.cash.filter(c => Math.abs((+c.cashAct || 0) - (+c.cashPos || 0)) >= 1000 || Math.abs((+c.qrAct || 0) - (+c.qrPos || 0)) >= 1000);
   if (diff.length) { const big = [...diff].sort((a, b) => Math.abs((b.cashAct - b.cashPos)) - Math.abs((a.cashAct - a.cashPos)))[0];
     out.push(["warn", `${diff.length} shift ada selisih POS vs aktual`, `Terbesar ${fdate(big.date)} shift ${big.shift || "-"}: tunai ${rp(big.cashPos)} vs ${rp(big.cashAct)}, QR ${rp(big.qrPos)} vs ${rp(big.qrAct)}.${diff.some(c => (c.cashAct - c.cashPos) + (c.qrAct - c.qrPos) === 0 && c.cashAct !== c.cashPos) ? " Sebagian selisih tunai dan QR saling menutup, kemungkinan salah input metode bayar." : ""}`]); }
