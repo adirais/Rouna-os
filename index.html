@@ -2674,7 +2674,7 @@ function viewPnl(mo) {
     <div class="kpi"><span class="eyebrow">Pendapatan</span><span class="v">${rpk(P.rev)}</span><span class="small muted">${P.revDays} hari · ${esc(P.revSrc)}</span></div>
     <div class="kpi"><span class="eyebrow">Total beban operasional</span><span class="v">${rpk(P.beban)}</span><span class="small muted">${pc(P.beban)} pendapatan</span></div>
     <div class="kpi"><span class="eyebrow">Laba sebelum saving</span><span class="v">${rpk(P.laba)}</span><span class="small muted">margin ${pc(P.laba)}</span></div>
-    <div class="kpi"><span class="eyebrow">Net profit nyata</span><span class="v" style="color:${P.net < 0 ? "var(--crit)" : "var(--ok)"}">${rpk(P.net)}</span><span class="small muted">setelah saving ${rpk(P.saving)}</span></div></div>
+    <div class="kpi"><span class="eyebrow">Net profit nyata</span><span class="v" style="color:${P.net < 0 ? "var(--crit)" : "var(--ok)"}">${rpk(P.net)}</span><span class="small muted">${P.saving ? `setelah saving ${rpk(P.saving)}` : "saving belum dicatat (diisi akhir bulan)"}</span></div></div>
   ${fnbDashboard(P)}
   ${laborPanel(S.ui.finMonth)}
   ${primeCard(P)}
@@ -4533,7 +4533,7 @@ function fnbDashboard(P) {
   const labaSt = B.lp >= FNB_LABA ? ["ok", "Sesuai standar"] : B.lp >= 10 ? ["warn", "Di bawah standar"] : ["crit", B.lp < 0 ? "Rugi" : "Jauh di bawah"];
   const grossSt = B.gross >= 68 ? ["ok", "Sesuai standar"] : B.gross >= 63 ? ["warn", "Sedikit di bawah"] : ["crit", "Rendah"];
   const primeSt = B.prime <= 48 ? ["ok", "Sesuai standar"] : B.prime <= 55 ? ["warn", "Sedikit di atas"] : ["crit", "Terlalu tinggi"];
-  const rows = B.list.map(b => { const st = fnbState(b.p, b.t); return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.c};margin-right:8px"></span>${esc(b.n)}</td><td class="r num">${rp(b.v)}</td><td class="r num"><b>${b.p.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">${b.t != null ? "≤" + fnbN(b.t) + "%" : "-"}</td><td>${st[0] ? `<span class="chip ${st[0]}">${st[1]}</span>` : `<span class="chip">${st[1]}</span>`}</td></tr>`; }).join("");
+  const rows = B.list.map(b => { const st = b.k === "sewa" && !b.v ? ["", "Belum dicatat"] : fnbState(b.p, b.t); return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.c};margin-right:8px"></span>${esc(b.n)}</td><td class="r num">${rp(b.v)}</td><td class="r num"><b>${b.p.toFixed(1).replace(".", ",")}%</b></td><td class="r small muted">${b.t != null ? "≤" + fnbN(b.t) + "%" : "-"}</td><td>${st[0] ? `<span class="chip ${st[0]}">${st[1]}</span>` : `<span class="chip">${st[1]}</span>`}</td></tr>`; }).join("");
   const insights = [];
   B.list.forEach(b => { if (b.t == null || !b.v) return; const st = fnbState(b.p, b.t); if (st[0] !== "ok") insights.push([st[0], `${b.n} ${fnbN(b.p)}% (standar ${fnbN(b.t)}%)`, `Kelebihan ± ${rp((b.p - b.t) / 100 * r)} bulan ini. ${b.tip}`]); });
   if (B.prime > 48) insights.push([primeSt[0], `Prime cost ${fnbN(B.prime)}% (standar ≤48%: HPP 32% + payroll 16%)`, "HPP + payroll adalah biaya terbesar yang bisa dikendalikan."]);
