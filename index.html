@@ -687,7 +687,7 @@ function viewNoLink() {
 
 /* ---------- PANDUAN PER PERAN ---------- */
 function guideData() {
-  const r = realRole(), t = today(), cl = S.closings.find(c => c.date === t), mine = S.attendance.find(a => a.date === t)?.rec?.[S.me];
+  const r = realRole(), t = today(), cl = S.closings.find(c => c.date === bizDay()), mine = S.attendance.find(a => a.date === t)?.rec?.[S.me];
   const B = (label, act, attrs) => `<button class="btn sm" data-act="${act}" ${attrs || ""}>${label}</button>`;
   const absen = {t: "Check-in saat datang, check-out saat pulang", d: "Selfie di area outlet. Jam tercatat otomatis.", done: !!(mine?.in && mine?.out) ? true : mine?.in ? "Sudah check-in" : false, b: B("Absen", "absenNow")};
   const salesDone = S.daily.some(d => d.date >= addDays(t, -1)) && S.sales.some(s => s.date >= addDays(t, -1));
@@ -794,7 +794,7 @@ function viewHome() {
   const r = role(), t = today();
   if (r === "crew") return crewHome();
   const low = lowItems();
-  const cl = S.closings.find(c => c.date === t);
+  const cl = S.closings.find(c => c.date === bizDay());
   const att = S.attendance.find(a => a.date === t);
   const inCount = att ? Object.values(att.rec || {}).filter(x => x.in).length : 0;
   const waitApprove = S.orders.filter(o => o.status === "diajukan");
@@ -1084,6 +1084,18 @@ async function submitRecv(form) {
 /* ---------- CLOSING ---------- */
 /* closing setelah tengah malam (sebelum jam 04.00) tetap dihitung untuk hari operasional sebelumnya */
 function bizDay() { return new Date().getHours() < 4 ? addDays(today(), -1) : today(); }
+/* 27 Nov 2026: crew bar/kitchen di shift terakhir area-nya (mis. B2, K2) tidak bisa check-out sebelum closing area itu dikirim.
+   Hari closing = hari kerja (sebelum 04:00 masih ikut tanggal kemarin). Shift pagi/middle yang bukan shift terakhir tidak diwajibkan. */
+const shArea = k => /^B/.test(k || "") ? "bar" : /^K/.test(k || "") ? "kitchen" : null;
+const shEndMin = k => { const d = shiftDef(k); if (!d || !d.e) return null; const [h, m] = d.e.split(":").map(Number); return (h < 4 ? h + 24 : h) * 60 + (m || 0); };
+function closingDue(sid, date) {
+  if (["owner", "manager", "finance"].includes(S.staff[sid]?.role)) return null;
+  const plan = planOf(date), k = plan[sid], a = shArea(k), mine = shEndMin(k);
+  if (!a || mine == null) return null;
+  const last = Math.max(...Object.values(plan).filter(x => shArea(x) === a).map(shEndMin).filter(x => x != null));
+  if (mine < last) return null;
+  return S.closings.find(c => c.date === date)?.shifts?.[a] ? null : a;
+}
 function viewClosing() {
   const t = bizDay(), cl = S.closings.find(c => c.date === t);
   const areas = role() === "kitchen" ? ["kitchen"] : role() === "headbar" ? ["bar", "kitchen"] : ["bar", "kitchen"];
@@ -3377,6 +3389,11 @@ function modalAbsen() {
   /* 8 Nov 2026: check-out yang terlanjur (mis. tidak sengaja) boleh diperbarui selama masih di hari kerja yang sama */
   if (mine?.out && Date.now() - mine.out.ts > 10 * 36e5) return toast("Absensi hari ini sudah lengkap.");
   const kind = mine?.in ? "out" : "in", redo = !!mine?.out;
+  const due = kind === "out" && !redo ? closingDue(S.me, ad) : null;
+  if (due) return openModal(`<div class="modal" role="dialog" aria-label="Closing dulu"><div class="modal-h"><h2>Closing ${AREAS[due]} dulu</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <p style="margin:0">Kamu di shift terakhir ${AREAS[due]} hari ${fdate(ad)}. Check-out baru bisa setelah closing ${AREAS[due]} dikirim, oleh kamu atau rekan satu area.</p>
+    <p class="small muted" style="margin:0">Closing sebelum jam 04:00 masih dihitung hari ${fdate(ad)}.</p>
+    <div class="foot"><button type="button" class="btn" data-act="close">Nanti</button><button type="button" class="btn pri" data-act="closing" data-a="${due}">Isi closing ${AREAS[due]}</button></div></div>`);
   setTimeout(startGeo, 0);
   openModal(`<form data-submit="absen" data-k="${kind}" data-date="${ad}" class="modal" role="dialog" aria-label="Absensi">
     <div class="modal-h"><h2>${kind === "in" ? "Check-in" : "Check-out"} · ${esc(me().name)}</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
@@ -3545,6 +3562,8 @@ async function submitAbsen(form) {
   if (GEO && !GEO.pending) { rec.geo = GEO.err ? {err: GEO.err} : {lat: GEO.lat, lng: GEO.lng, acc: GEO.acc}; const gi = geoInfo(GEO); if (gi.d != null) rec.geo.dist = Math.round(gi.d); }
   if (S.upl && SELFIE.big) { try { const up = await S.upl.upload(SELFIE.big, {type: "image/jpeg"}); rec.asset = up.id; } catch (e) { console.warn("asset", e); } }
   const ad = form.dataset.date || today();
+  const due = k === "out" && !S.attendance.find(a => a.date === ad)?.rec?.[S.me]?.out ? closingDue(S.me, ad) : null;
+  if (due) { btn.disabled = false; btn.textContent = "Simpan check-out"; return toast("Kirim closing " + AREAS[due] + " dulu sebelum check-out."); }
   const prevOut = k === "out" ? S.attendance.find(a => a.date === ad)?.rec?.[S.me]?.out : null;
   const ok = await guard(() => mergeDoc("attendance/" + ad, {rec: {[S.me]: {[k]: rec, ...(prevOut ? {outPrev: {ts: prevOut.ts, replacedAt: rec.ts}} : {})}}}, {date: ad}));
   if (ok) { SELFIE = null; closeModal(); toast(k === "in" ? "Check-in tercatat " + ftime(rec.ts) : "Check-out tercatat " + ftime(rec.ts)); }
@@ -4456,7 +4475,7 @@ function olsCompleteness() {
 
 /* ===== Beranda Crew: ambil barang, waste, closing, absen (tanpa angka penjualan) ===== */
 function crewHome() {
-  const t = today(), cl = S.closings.find(c => c.date === t), sd = S.sops.find(s => s.date === t);
+  const t = today(), cl = S.closings.find(c => c.date === bizDay()), sd = S.sops.find(s => s.date === t);
   const cChips = Object.keys(AREAS).map(a => cl?.shifts?.[a] ? `<span class="chip ok">${AREAS[a]} selesai ${ftime(cl.shifts[a].ts)}</span>` : `<span class="chip">${AREAS[a]} belum</span>`).join(" ");
   const mineMoves = S.moves.filter(m => m.date === t).flatMap(m => Object.values(m.list || {})).filter(e => e.by === S.me).sort((a, b) => b.ts - a.ts).slice(0, 6);
   const ur = S.docs.filter(d => docOk(d) && !docAck(d)).length;
@@ -5352,7 +5371,7 @@ const ACT = {
   takePar: () => modalMove("take", parPreset()),
   ordCancel: b => confirmBox("Batalkan pengajuan?", "Pengajuan order ini akan dibatalkan.", "Batalkan", async () => { await guard(() => S.db.doc("orders/" + b.dataset.id).update({status: "dibatalkan", cancelledAt: Date.now()})); }),
   exportReport: () => exportReport(),
-  closing: b => { const a = b.dataset.a || (role() === "kitchen" ? "kitchen" : "bar"); if (S.closings.find(c => c.date === today())?.shifts?.[a]) { S.view = "closing"; render(); return toast("Closing " + AREAS[a] + " hari ini sudah dikirim."); } modalClosing(a); },
+  closing: b => { const a = b.dataset.a || (role() === "kitchen" ? "kitchen" : "bar"); if (S.closings.find(c => c.date === bizDay())?.shifts?.[a]) { S.view = "closing"; render(); return toast("Closing " + AREAS[a] + " hari ini sudah dikirim."); } modalClosing(a); },
   copySys: () => { let n = 0, skip = 0; document.querySelectorAll("#modal input[data-sysv]").forEach(i => { if (i.value !== "") return; const ex = +i.closest("tr")?.dataset.exp || 0; if (ex > 0) { skip++; return; } i.value = i.dataset.sysv; n++; clCheck(i); });
     saveDraft($("#modal form[data-submit=closing]")); toast(`${n} bahan disalin.${skip ? ` ${skip} bahan yang terpakai belum diisi, hitung fisik dulu.` : ""}`); },
   draftClear: () => { const f = $("#modal form[data-submit=closing]") || $("#modal form[data-submit=opArea]"); if (!f) return; lsSet(draftKey(f), null); f.reset(); restoreDraft(f); if (f.dataset.submit === "opArea") opCalc(f); toast("Draf dihapus."); },
