@@ -2343,6 +2343,7 @@ async function submitRndLog(form) {
   if (ok) { RNDPICS = []; closeModal(); toast("Progress tersimpan" + (mats.length ? `, ${mats.length} bahan stok dicatat sebagai R&D (bukan waste)` : "") + (buys.length ? `, ${buys.length} bahan beli khusus` : "") + "."); } else btn.disabled = false;
 }
 const ACT7 = {
+  exDl: () => modalExDl(),
   rndNew: () => modalRnd(), rndEdit: b => modalRnd(b.dataset.id), rndLog: b => modalRndLog(b.dataset.id),
   rndOpen: b => { S.ui.rndId = b.dataset.id; window.scrollTo(0, 0); render(); },
   rndDel: b => confirmBox("Hapus proyek R&D?", "Proyek dan progressnya hilang dari daftar. Mutasi stok bahan yang sudah dipakai tetap tercatat.", "Hapus", async () => { if (await guard(() => mergeDoc("rnd/" + b.dataset.id, {void: true}))) { closeModal(); S.ui.rndId = ""; toast("Proyek dihapus."); render(); } }),
@@ -2721,9 +2722,88 @@ function viewExpenses(mo) {
     <section class="panel"><h2>Cara mencatat</h2><div class="small" style="display:grid;gap:6px"><div>Catat <b>semua</b> uang keluar di sini, termasuk belanja bahan baku, kasbon (kategori Gaji), saving, dan petty cash, sama seperti buku pengeluaran.</div><div>Saving dan Petty Cash tidak dihitung sebagai beban. Gaji bersih karyawan diisi sebagai total di tab Gaji.</div><div>Isi <b>Dibayar kepada</b> agar pemeriksaan vendor dan pembayaran ke pemilik otomatis.</div></div></section></div>
   <section class="panel" style="gap:10px"><div class="row"><div style="flex:1 1 200px"><input id="ex-q" data-ui="exQ" value="${esc(u.exQ || "")}" placeholder="Cari detail atau penerima…" aria-label="Cari pengeluaran"></div>
     <select id="ex-f" data-ui="exCat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${EXP_GROUPS.map(([g, cs]) => `<optgroup label="${esc(g)}"><option value="g:${esc(g)}" ${u.exCat === "g:" + g ? "selected" : ""}>Semua ${esc(g)}</option>${cs.filter(c => cats.includes(c)).map(c => `<option value="${esc(c)}" ${u.exCat === c ? "selected" : ""}>${esc(catLabel(c))}</option>`).join("")}</optgroup>`).join("")}</select></div>
-    <div class="panel-h"><span class="small muted">${ex.length} transaksi</span><span class="num"><b>${rp(tot)}</b></span></div>
+    <div class="panel-h"><span class="small muted">${ex.length} transaksi</span><div class="row"><span class="num"><b>${rp(tot)}</b></span><button class="btn sm" data-act="exDl">Unduh</button></div></div>
     ${ex.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Detail</th><th>Kategori</th><th>Metode</th><th>Dibayar kepada</th><th class="r">Biaya</th><th></th></tr></thead><tbody>
     ${ex.slice(0, 400).map(e => `<tr><td class="small" style="white-space:nowrap">${fdate(e.date)}${e.nodate ? ' <span class="chip warn">?</span>' : ""}</td><td>${esc(e.note || "-")}${e.edit ? `<span class="sub small muted">Diubah ${esc(S.staff[e.edit.by]?.name || "-")} · ${fdt(e.edit.at)}</span>` : ""}</td><td class="small">${esc(catLabel(e.cat))}</td><td class="small muted">${esc(e.pay || "")}</td><td class="small">${esc(e.to || "")}</td><td class="r num">${rp(e.amt)}</td><td class="r" style="white-space:nowrap">${canEdit ? `<button class="btn sm ghost" data-act="expEdit" data-id="${e.id}" data-m="${mo}" aria-label="Ubah">Ubah</button><button class="btn sm ghost" data-act="expVoid" data-id="${e.id}" data-m="${mo}" aria-label="Hapus" title="Hapus">✕</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="small muted">-</div>`}</section>`;
+}
+
+/* ===== Unduh pengeluaran: Excel atau PDF, per bulan / rentang bulan / semua. 27 Nov 2026 ===== */
+function modalExDl() {
+  const ms = [...new Set(S.expenses.map(e => e.month).filter(Boolean))].sort().reverse(), cur = S.ui.finMonth || ms[0] || today().slice(0, 7);
+  if (!ms.length) return toast("Belum ada pengeluaran yang tercatat.");
+  const opt = sel => ms.map(m => `<option value="${m}" ${m === sel ? "selected" : ""}>${monthLabel(m)}</option>`).join("");
+  const filt = S.ui.exCat || S.ui.exQ;
+  openModal(`<form data-submit="exDl" class="modal" role="dialog" aria-label="Unduh pengeluaran"><div class="modal-h"><h2>Unduh pengeluaran</h2><button type="button" class="btn sm ghost" data-act="close">Tutup</button></div>
+    <div class="f"><span>Periode</span><div class="seg" role="radiogroup">
+      <label class="chip" style="cursor:pointer"><input type="radio" name="per" value="mo" checked> ${monthLabel(cur)}</label>
+      <label class="chip" style="cursor:pointer"><input type="radio" name="per" value="rg"> Rentang bulan</label>
+      <label class="chip" style="cursor:pointer"><input type="radio" name="per" value="all"> Semua (${ms.length} bulan)</label></div></div>
+    <div class="fgrid two"><label class="f">Dari bulan<select name="from">${opt(ms[Math.min(2, ms.length - 1)])}</select></label><label class="f">Sampai bulan<select name="to">${opt(ms[0])}</select></label></div>
+    <p class="small muted" style="margin:0">Bulan dipakai bila memilih Rentang bulan.</p>
+    ${filt ? `<label class="chip" style="cursor:pointer;align-self:flex-start"><input type="checkbox" name="filt"> Hanya yang sesuai filter/pencarian saat ini</label>` : ""}
+    <div class="f"><span>Format</span><div class="seg"><label class="chip" style="cursor:pointer"><input type="radio" name="fmt" value="xlsx" checked> Excel (.xlsx)</label><label class="chip" style="cursor:pointer"><input type="radio" name="fmt" value="pdf"> PDF</label></div></div>
+    <div class="foot"><button type="button" class="btn" data-act="close">Batal</button><button class="btn pri" type="submit">Unduh</button></div></form>`);
+  S.ui.exDlCur = cur;
+}
+function exDlRows(form) {
+  const ms = [...new Set(S.expenses.map(e => e.month).filter(Boolean))].sort(), per = form.per.value;
+  let sel = per === "mo" ? [S.ui.exDlCur] : per === "all" ? ms : ms.filter(m => m >= (form.from.value < form.to.value ? form.from.value : form.to.value) && m <= (form.from.value < form.to.value ? form.to.value : form.from.value));
+  let rows = sel.flatMap(m => expEntries(m).map(e => ({...e, month: m}))).sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.ts || 0) - (b.ts || 0));
+  if (form.filt?.checked) { const u = S.ui; if (u.exCat) rows = rows.filter(e => (u.exCat.startsWith("g:") ? groupOf(e.cat) === u.exCat.slice(2) : e.cat === u.exCat)); if (u.exQ) rows = rows.filter(e => norm(e.note + " " + e.to + " " + e.cat).includes(norm(u.exQ))); }
+  const label = sel.length === 1 ? monthLabel(sel[0]) : `${monthLabel(sel[0])} – ${monthLabel(sel[sel.length - 1])}`;
+  const slug = sel.length === 1 ? sel[0] : `${sel[0]}_${sel[sel.length - 1]}`;
+  return {rows, sel, label, slug};
+}
+async function submitExDl(form) {
+  const {rows, sel, label, slug} = exDlRows(form);
+  if (!rows.length) return toast("Tidak ada pengeluaran di periode itu.");
+  const fmt = form.fmt.value; closeModal();
+  if (fmt === "xlsx") return exDlXlsx(rows, sel, label, slug);
+  return exDlPdf(rows, sel, label, slug);
+}
+function exDlXlsx(rows, sel, label, slug) {
+  if (!window.XLSX) return toast("Pembuat Excel belum termuat. Muat ulang halaman.");
+  const total = rows.reduce((s, e) => s + (+e.amt || 0), 0);
+  const A = [["Tanggal", "Bulan", "Detail", "Kategori", "Grup", "Metode", "Dibayar kepada", "Biaya (Rp)", "Dicatat oleh"]];
+  const xd = d => (Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 864e5;
+  rows.forEach(e => A.push([e.date ? xd(e.date) : "", monthLabel(e.month), e.note || "", catLabel(e.cat), groupOf(e.cat), e.pay || "", e.to || "", +e.amt || 0, S.staff[e.by]?.name || ""]));
+  A.push([], ["", "", "TOTAL", "", "", "", "", total, ""]);
+  const ws = XLSX.utils.aoa_to_sheet(A);
+  ws["!cols"] = [{wch: 12}, {wch: 10}, {wch: 42}, {wch: 26}, {wch: 26}, {wch: 10}, {wch: 26}, {wch: 14}, {wch: 18}];
+  for (let r = 1; r < A.length; r++) { const c = ws[XLSX.utils.encode_cell({r, c: 7})]; if (c && typeof c.v === "number") c.z = "#,##0"; const d = ws[XLSX.utils.encode_cell({r, c: 0})]; if (d && typeof d.v === "number") d.z = "dd/mm/yyyy"; }
+  ws["!autofilter"] = {ref: `A1:I${rows.length + 1}`};
+  // ringkasan: kategori × bulan
+  const cats = [...new Set(rows.map(e => e.cat))].sort((a, b) => EXP_CATS.indexOf(a) - EXP_CATS.indexOf(b));
+  const B = [["Grup", "Kategori", ...sel.map(monthLabel), ...(sel.length > 1 ? ["Total"] : [])]];
+  cats.forEach(c => { const v = sel.map(m => rows.filter(e => e.month === m && e.cat === c).reduce((s, e) => s + (+e.amt || 0), 0)); B.push([groupOf(c), catLabel(c), ...v, ...(sel.length > 1 ? [v.reduce((s, x) => s + x, 0)] : [])]); });
+  const colT = sel.map(m => rows.filter(e => e.month === m).reduce((s, e) => s + (+e.amt || 0), 0));
+  B.push(["", "TOTAL", ...colT, ...(sel.length > 1 ? [total] : [])]);
+  B.push([], ["Catatan: Saving dan Petty Cash termasuk di sini (Non-Beban). Gaji bersih payroll tidak termasuk; lihat Keuangan → Gaji."]);
+  const ws2 = XLSX.utils.aoa_to_sheet(B);
+  ws2["!cols"] = [{wch: 26}, {wch: 30}, ...sel.map(() => ({wch: 14})), {wch: 14}];
+  for (let r = 1; r <= cats.length + 1; r++) for (let c = 2; c < B[0].length; c++) { const x = ws2[XLSX.utils.encode_cell({r, c})]; if (x && typeof x.v === "number") x.z = "#,##0"; }
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Pengeluaran"); XLSX.utils.book_append_sheet(wb, ws2, "Ringkasan");
+  XLSX.writeFile(wb, `pengeluaran-rouna-${slug}.xlsx`);
+  toast(`Excel diunduh: ${rows.length} transaksi, ${label}.`);
+}
+async function exDlPdf(rows, sel, label, slug) {
+  try { toast("Menyiapkan PDF…"); await loadPdfLib(); } catch (e) { return toast("PDF gagal dimuat. Cek koneksi internet."); }
+  const {jsPDF} = window.jspdf, doc = new jsPDF({orientation: "landscape", unit: "mm", format: "a4"}), total = rows.reduce((s, e) => s + (+e.amt || 0), 0);
+  pdfHead(doc, "Pengeluaran · " + label, `${rows.length} transaksi · total ${pdfRp(total)} · termasuk Saving & Petty Cash, tanpa gaji bersih payroll`);
+  const body = [];
+  sel.forEach(m => { const r = rows.filter(e => e.month === m); if (!r.length) return;
+    if (sel.length > 1) body.push([{content: monthLabel(m), colSpan: 6, styles: {fontStyle: "bold", fillColor: [236, 232, 226]}}]);
+    r.forEach(e => body.push([e.date ? fdate(e.date) : "-", e.note || "-", catLabel(e.cat), e.pay || "", e.to || "", {content: pdfRp(e.amt), styles: {halign: "right"}}]));
+    if (sel.length > 1) body.push([{content: "Subtotal " + monthLabel(m), colSpan: 5, styles: {fontStyle: "bold"}}, {content: pdfRp(r.reduce((s, e) => s + (+e.amt || 0), 0)), styles: {halign: "right", fontStyle: "bold"}}]); });
+  body.push([{content: "TOTAL", colSpan: 5, styles: {fontStyle: "bold"}}, {content: pdfRp(total), styles: {halign: "right", fontStyle: "bold"}}]);
+  doc.autoTable({startY: 41, styles: {fontSize: 8, cellPadding: 1.6}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, margin: {left: 12, right: 12},
+    head: [["Tanggal", "Detail", "Kategori", "Metode", "Dibayar kepada", "Biaya"]], body, columnStyles: {0: {cellWidth: 28}, 1: {cellWidth: 90}, 2: {cellWidth: 48}, 3: {cellWidth: 20}, 4: {cellWidth: 48}, 5: {halign: "right"}}});
+  const byC = {}; rows.forEach(e => byC[e.cat] = (byC[e.cat] || 0) + (+e.amt || 0));
+  doc.addPage(); pdfHead(doc, "Ringkasan per kategori · " + label, `total ${pdfRp(total)}`);
+  doc.autoTable({startY: 41, styles: {fontSize: 9, cellPadding: 1.8}, headStyles: {fillColor: [30, 30, 30], textColor: 255}, margin: {left: 12, right: 12},
+    head: [["Grup", "Kategori", "Transaksi", "Total", "% dari total"]],
+    body: Object.entries(byC).sort((a, b) => b[1] - a[1]).map(([c, v]) => [groupOf(c), catLabel(c), rows.filter(e => e.cat === c).length, {content: pdfRp(v), styles: {halign: "right"}}, {content: (v / total * 100).toFixed(1).replace(".", ",") + "%", styles: {halign: "right"}}])});
+  doc.save(`pengeluaran-rouna-${slug}.pdf`); toast(`PDF diunduh: ${rows.length} transaksi, ${label}.`);
 }
 function modalExpense(m, id) {
   const e = m && id ? S.expenses.find(x => x.month === m)?.rec?.[id] : null;
@@ -4758,7 +4838,7 @@ const ACT3 = {
   stockCard: b => modalStockCard(b.dataset.id),
   auReload: () => { S.audit = null; render(); }
 };
-const SUBMIT3 = {mbSave: submitMbSave, bankAcc: submitBankAcc, bankTx: submitBankTx, asset: submitAsset};
+const SUBMIT3 = {exDl: submitExDl, mbSave: submitMbSave, bankAcc: submitBankAcc, bankTx: submitBankTx, asset: submitAsset};
 document.addEventListener("change", e => {
   const el = e.target;
   if (el.matches("[data-tx-kind]")) { const o = el.selectedOptions[0], f = el.form; if (o.dataset.from !== undefined) f.from.value = o.dataset.from; if (o.dataset.to !== undefined) f.to.value = o.dataset.to; }
